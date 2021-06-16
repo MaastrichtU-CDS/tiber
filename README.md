@@ -1,3 +1,3 @@
 # TIBER
 
-Repository for tiber project
+Repository for the TIBER project
