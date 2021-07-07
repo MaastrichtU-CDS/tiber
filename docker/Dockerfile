@@ -6,6 +6,7 @@ FROM custom-r-base
 # This is a placeholder that should be overloaded by invoking
 # docker build with '--build-arg PKG_NAME=...'
 ARG PKG_NAME='algorithm'
+ARG IMAGE_NAME='maintainer/algorithm'
 
 LABEL maintainer="Main Tainer <user@example.com>"
 
@@ -24,5 +25,6 @@ RUN touch database
 
 # Tell docker to execute `docker.wrapper()` when the image is run.
 ENV PKG_NAME=${PKG_NAME}
+ENV IMAGE_NAME=${IMAGE_NAME}
 CMD Rscript -e "vtg::docker.wrapper('$PKG_NAME')"
 

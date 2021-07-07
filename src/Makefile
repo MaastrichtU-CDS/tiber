@@ -6,7 +6,7 @@
 $(eval PKG_NAME := $(shell Rscript -e "cat(basename(dirname(getwd())))"))
 
 # These variables can be set as environment variables or as arguments to `make`
-HOST ?= hub.docker.io
+HOST ?= docker.io
 IMAGE ?= jaspersnel/${PKG_NAME}
 TAG ?= latest
 $(eval PWD := $(shell Rscript -e "cat(dirname(getwd()))"))
@@ -69,6 +69,7 @@ docker-build:
 	docker build \
 	  -f ../docker/Dockerfile \
 	   --build-arg PKG_NAME=${PKG_NAME} \
+	   --build-arg IMAGE_NAME=${IMAGE} \
 	  -t ${IMAGE}:${TAG} \
 	  -t ${HOST}/${IMAGE}:${TAG} \
 	  ../

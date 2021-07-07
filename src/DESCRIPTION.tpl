@@ -13,5 +13,5 @@ Imports:
     vtg,
     bnlearn
 Remotes:
-    mellesies/vtg
+    iknl/vtg
 RoxygenNote: 7.0.0

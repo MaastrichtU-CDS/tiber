@@ -2,7 +2,7 @@ bayesian <- function(client) {
     vtg::log$info("Running bayesian main algorithm")
     pkg.name <- getPackageName()
 
-    image.name <- glue::glue("jaspersnel/{pkg.name}")
+    image.name <- Sys.getenv("IMAGE_NAME")
 
     client$set.task.image(
         image.name,
