@@ -1,17 +1,3 @@
-# Set up neat logging
-library(lgr)
-# lgr$set_threshold("warn")
-lgr$set_threshold("debug")
-
-lgr::lgr$appenders$console$set_layout(
-  lgr::LayoutFormat$new(
-    fmt="%t - %L (%c): %m",
-    timestamp_fmt="%H:%M:%S",
-    colors=getOption("lgr.colors"),
-    pad_levels="right"
-  )
-)
-
 setup.client <- function() {
   # Define parameters
   username <- "node1-user"
@@ -41,10 +27,10 @@ print( client$getCollaborations() )
 client$setCollaborationId(1)
 
 client$set.task.image(
-  'jaspersnel/vtg.bn',
+  'jaspersnel/tiber',
   task.name="bayesian"
 )
 
 # Run the bayesian network algorithm
 client$setUseMasterContainer(T)
-result <- client$call('bayesian')
+result <- client$call('bayesian', 'PN')
