@@ -6,6 +6,7 @@ Repository for the TIBER project.
 
 The implementation for TIBER provides a federated approach to build a bayesian network.
 Using vantage6 infrastructure it's possible to run the algorithm at each center using the following interface:
+
 ```R
     client$set.task.image(
         'tiber/docker-image:x.y.z',
@@ -25,15 +26,17 @@ Using vantage6 infrastructure it's possible to run the algorithm at each center 
     result <- client$call('bayesian', column_to_predict, config)
 ```
 
+Calling the main method (`bayesian`) will build the bayesian network using the default configurations:
+- algorithm - the structure learning algorithm used: 'hc'
+- R - the number of bootstrap replicates: 400
+- weighted_strength - threshold to select the network arcs based on the aggregated scoring: 0.2
+
 ## Packaging the algorithm
 
 This repository contains the code to build the package and create the docker algorithm image for vantage6.
 To build (and push) the docker image:
 - `cd` to the `src` directory;
-- execute the following command:
-```bash
-make docker
-```
+- execute the following command: `make docker`
 
 ## Testing
 
