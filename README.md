@@ -31,6 +31,8 @@ Calling the main method (`bayesian`) will build the bayesian network using the d
 - R - the number of bootstrap replicates: 400
 - weighted_strength - threshold to select the network arcs based on the aggregated scoring: 0.2
 
+These configurations can be overrided using the `config` list and providing it when calling the vantage6 client.
+
 ## Packaging the algorithm
 
 This repository contains the code to build the package and create the docker algorithm image for vantage6.
