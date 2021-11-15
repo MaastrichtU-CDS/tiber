@@ -4,11 +4,11 @@ setup.client <- function() {
   password <- "node1-password"
   host <- 'http://localhost:5000'
   api_path <- '/api'
-  
+
   # Create the client
   client <- vtg::Client$new(host, api_path=api_path)
   client$authenticate(username, password)
-  
+
   return(client)
 }
 
@@ -18,19 +18,26 @@ client <- setup.client()
 # Get a list of available collaborations
 print( client$getCollaborations() )
 
-# Should output something like this:
-#   id     name
-# 1  1 ZEPPELIN
-# 2  2 PIPELINE
-
 # Select a collaboration
 client$setCollaborationId(1)
 
+# Previous version: 'jaspersnel/tiber'
 client$set.task.image(
-  'jaspersnel/tiber',
+  'pmateus/tiber',
   task.name="bayesian"
 )
 
+# Possibility to directly configure options, such as
+# the number of bootstrap replicates.
+config <- list(
+  arc_strength_args = list(
+    # algorithm = "hc",
+    R = 300
+    # algorithm.args = list(score = "bde", restart = 5, perturb = 5)
+  ),
+  # weighted_strength = 0.3
+)
+
 # Run the bayesian network algorithm
-client$setUseMasterContainer(T)
-result <- client$call('bayesian', 'PN')
+client$use.master.container <- TRUE
+result <- client$call('bayesian', 'PN', config)

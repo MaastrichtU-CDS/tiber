@@ -19,9 +19,6 @@ RUN R CMD INSTALL --no-multiarch --with-keep.source .
 # Change directory to '/app’ and create files that will be
 # used to mount input, output and database.
 WORKDIR /app
-RUN touch input.txt
-RUN touch output.txt
-RUN touch database
 
 # Tell docker to execute `docker.wrapper()` when the image is run.
 ENV PKG_NAME=${PKG_NAME}
