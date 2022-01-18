@@ -7,8 +7,8 @@ $(eval PKG_NAME := $(shell Rscript -e "cat(basename(dirname(getwd())))"))
 
 # These variables can be set as environment variables or as arguments to `make`
 HOST ?= docker.io
-IMAGE ?= jaspersnel/${PKG_NAME}
-TAG ?= latest
+IMAGE ?= pmateus/${PKG_NAME}
+TAG ?= 1.0.0
 $(eval PWD := $(shell Rscript -e "cat(dirname(getwd()))"))
 
 echo:
@@ -59,10 +59,10 @@ docker-build:
 	# The custom R base adds a few linux packages (openssl & xml2)
 	# Additionally, it installs the R packages in 'install_base_packages.R'
 	# to speedup building the image container this package's source.
-	docker build \
-	   -f ../docker/Dockerfile.custom-r-base \
-	   -t custom-r-base \
-	   ../
+	# docker build \
+	#    -f ../docker/Dockerfile.custom-r-base \
+	#    -t custom-r-base \
+	#    ../
 
 	# Build the docker image containing the local algorithm
 	# docker build --no-cache -f docker/Dockerfile -t $IMAGE:$TAG -t $HOST/$IMAGE:$TAG .
@@ -70,7 +70,7 @@ docker-build:
 	  -f ../docker/Dockerfile \
 	   --build-arg PKG_NAME=${PKG_NAME} \
 	   --build-arg IMAGE_NAME=${IMAGE} \
-	  -t ${IMAGE}:${TAG} \
+	  -t ${IMAGE} \
 	  -t ${HOST}/${IMAGE}:${TAG} \
 	  ../
 

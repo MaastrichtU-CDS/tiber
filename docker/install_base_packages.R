@@ -3,7 +3,9 @@ packages <- c(
     "rjson",
     "dplyr",
     "namespace",
-    "devtools"
+    "devtools",
+    "ROCaggregator",
+    "ROCR"
 )
 
 install.packages(packages)

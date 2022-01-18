@@ -11,15 +11,42 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Send off a new container if necessary
     if (client$use.master.container) {
-        vtg::log$info("Running `bayesian` in master container using image '{image.name}'")
+        vtg::log$info(
+            "Running `bayesian` in master container using image '{image.name}'")
         result <- client$call("bayesian")
         return(result)
     }
-
     vtg::log$info("Running `bayesian` locally")
-    vtg::log$info("Calling node bootstraps")
+
+    # Define the nodes used for training and validation
+    # By default, it will select a random node for validation
+    collaboration_org_ids = client$collaboration$organizations
+    validate_results <- TRUE
+    if ("val_org_id" %in% names(config)) {
+        org_id <- collaboration_org_ids[[sample(1:length(collaboration_org_ids), 1)]]$id
+        vtg::log$info("Organization '{org_id}' selected for validation")
+        config[["val_org_id"]] <- org_id
+    } else if (length(config[["val_org_id"]]) == 0) {
+        vtg::log$info("Validation won't be performed")
+        config[["val_org_id"]] <- -1
+        validate_results <- FALSE
+    }
+
+    # Update the client organizations according to the ones that will be used
+    # for training
+    client$collaboration$organizations <- list()
+    validation_orgs <- list()
+    for (collaboration in collaboration_org_ids) {
+        if (collaboration$id %in% config[["val_org_id"]]) {
+            validation_orgs <- append(validation_orgs, list(collaboration))
+        } else {
+            client$collaboration$organizations <- append(
+                client$collaboration$organizations, list(collaboration))
+        }
+    }
 
     # Get the structure of the network
+    vtg::log$info("Getting the arc strength from each node")
     responses <- client$call("bayesiannode", config[["arc_strength_args"]])
 
     vtg::log$info("Got {length(responses)} responses")
@@ -57,23 +84,38 @@ bayesian <- function(client, pred_col, config=list()) {
 
     results <- list(structure=FinalStructure$arcs)
 
-    # Train the network
+    # Training the network
     vtg::log$info("Training the network")
-    responses <- client$call('bayesiantrain', bnlearn::nodes(FinalStructure), as.data.frame(bnlearn::arcs(FinalStructure)), pred_col)
+    responses <- client$call(
+        "bayesiantrain",
+        bnlearn::nodes(FinalStructure),
+        as.data.frame(bnlearn::arcs(FinalStructure))
+    )
 
-    # We only keep the fit on the largest sample
-    biggest_i <- which.max(lapply(responses, function(x){return(x[['n_obs']])}))
-    model <- responses[[biggest_i]][['model']]
+    # Weighted average to determine the parameters for the conditional probability tables
+    vtg::log$info("Aggregate the conditional probability tables")
+    model <- responses[[1]][["model"]]
+    total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
+    for (node in names(model)) {
+        weighted_prob <- lapply(
+            1:length(responses),
+            function(i) responses[[i]]$model[[node]]$prob * responses[[i]][["n_obs"]] / total_samples
+        )
+        #model[[node]]["prob"] <- list(Reduce('+', weighted_prob))
+    }
 
-    results <- c(results, list(train_preds=responses[[biggest_i]][['preds']], train_outcomes=responses[[biggest_i]][['outcomes']]))
+    results <- c(r=results, m=model)
 
-    # Now validate it against the other nodes
-    vtg::log$info("Validating the network")
-    responses <- client$call('bayesiantest', model, pred_col)
-    best_i <- which.max(lapply(responses, function(x){return(x[['n_obs']])}))
+    # Validation
+    if (validate_results) {
+        vtg::log$info("Validating the network")
+        client$collaboration$organizations <- validation_orgs
+        responses <- client$call("bayesianvalidate", model, pred_col)
 
-    results <- c(results, test_results=responses[-best_i])
+        results <- c(results, test_results=responses, val_org=config[["val_org_id"]])
+    }
 
+    return(results)
 }
 
 

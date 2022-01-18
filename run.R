@@ -21,7 +21,6 @@ print( client$getCollaborations() )
 # Select a collaboration
 client$setCollaborationId(1)
 
-# Previous version: 'jaspersnel/tiber'
 client$set.task.image(
   'pmateus/tiber',
   task.name="bayesian"
@@ -34,10 +33,12 @@ config <- list(
     # algorithm = "hc",
     R = 300
     # algorithm.args = list(score = "bde", restart = 5, perturb = 5)
-  ),
-  # weighted_strength = 0.3
+  )
+  #weighted_strength = 0.3
+  #val_org_id = list()
 )
 
 # Run the bayesian network algorithm
 client$use.master.container <- TRUE
+client$data_format <- "RDS"
 result <- client$call('bayesian', 'PN', config)

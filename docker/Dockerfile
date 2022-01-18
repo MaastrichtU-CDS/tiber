@@ -5,12 +5,12 @@ FROM custom-r-base
 
 # This is a placeholder that should be overloaded by invoking
 # docker build with '--build-arg PKG_NAME=...'
-ARG PKG_NAME='algorithm'
+ARG PKG_NAME='tiber'
 ARG IMAGE_NAME='maintainer/algorithm'
 
 LABEL maintainer="Main Tainer <user@example.com>"
 
-# Install federated chisq package
+# Install federated package
 COPY src /usr/local/R/${PKG_NAME}/
 WORKDIR /usr/local/R/${PKG_NAME}
 RUN Rscript -e 'library(devtools)' -e 'install_deps(".")'
