@@ -22,7 +22,7 @@ bayesian <- function(client, pred_col, config=list()) {
     # By default, it will select a random node for validation
     collaboration_org_ids = client$collaboration$organizations
     validate_results <- TRUE
-    if ("val_org_id" %in% names(config)) {
+    if (!("val_org_id" %in% names(config))) {
         org_id <- collaboration_org_ids[[sample(1:length(collaboration_org_ids), 1)]]$id
         vtg::log$info("Organization '{org_id}' selected for validation")
         config[["val_org_id"]] <- org_id
@@ -94,17 +94,17 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Weighted average to determine the parameters for the conditional probability tables
     vtg::log$info("Aggregate the conditional probability tables")
-    model <- responses[[1]][["model"]]
     total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
-    for (node in names(model)) {
+    model <- list()
+    for (node in names(responses[[1]][["model"]])) {
         weighted_prob <- lapply(
             1:length(responses),
-            function(i) responses[[i]]$model[[node]]$prob * responses[[i]][["n_obs"]] / total_samples
+            function(i) responses[[i]]$model[[node]][["prob"]] * responses[[i]][["n_obs"]] / total_samples
         )
-        #model[[node]]["prob"] <- list(Reduce('+', weighted_prob))
+        model[[node]] <- list(responses[[1]]$model[[node]], prob=Reduce('+', weighted_prob))
     }
 
-    results <- c(r=results, m=model)
+    results <- c(results, model)
 
     # Validation
     if (validate_results) {
