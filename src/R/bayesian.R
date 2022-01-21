@@ -33,14 +33,16 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Update the client organizations according to the ones that will be used
     # for training
-    client$collaboration$organizations <- list()
     validation_orgs <- list()
-    for (collaboration in collaboration_org_ids) {
-        if (collaboration$id %in% config[["val_org_id"]]) {
-            validation_orgs <- append(validation_orgs, list(collaboration))
-        } else {
-            client$collaboration$organizations <- append(
-                client$collaboration$organizations, list(collaboration))
+    if (validate_results) {
+        client$collaboration$organizations <- list()
+        for (collaboration in collaboration_org_ids) {
+            if (collaboration$id %in% config[["val_org_id"]]) {
+                validation_orgs <- append(validation_orgs, list(collaboration))
+            } else {
+                client$collaboration$organizations <- append(
+                    client$collaboration$organizations, list(collaboration))
+            }
         }
     }
 
@@ -96,17 +98,19 @@ bayesian <- function(client, pred_col, config=list()) {
     vtg::log$info("Aggregate the conditional probability tables")
     total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
     model <- list()
+    res <- list()
     for (node in names(responses[[1]][["model"]])) {
         weighted_prob <- lapply(
             1:length(responses),
             function(i) responses[[i]]$model[[node]][["prob"]] * responses[[i]][["n_obs"]] / total_samples
         )
-        model[[node]] <- list(responses[[1]]$model[[node]], prob=Reduce('+', weighted_prob))
+        model[[node]] <- responses[[1]]$model[[node]]
+        model[[node]][["prob"]] <- Reduce('+', weighted_prob)
     }
 
     # Validate the training set
     responses <- client$call("bayesianvalidate", model, pred_col, config)
-    results <- c(results, model, training_results=responses)
+    results <- list(results, model=model, training_results=responses)
 
     # Validate the testing set
     if (validate_results) {
@@ -114,7 +118,7 @@ bayesian <- function(client, pred_col, config=list()) {
         client$collaboration$organizations <- validation_orgs
         responses <- client$call("bayesianvalidate", model, pred_col, config)
 
-        results <- c(results, test_results=responses, val_org=config[["val_org_id"]])
+        results <- list(results, test_results=responses, val_org=config[["val_org_id"]])
     }
 
     return(results)
