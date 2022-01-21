@@ -28,7 +28,6 @@ bayesian <- function(client, pred_col, config=list()) {
         config[["val_org_id"]] <- org_id
     } else if (length(config[["val_org_id"]]) == 0) {
         vtg::log$info("Validation won't be performed")
-        config[["val_org_id"]] <- -1
         validate_results <- FALSE
     }
 
@@ -47,7 +46,7 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Get the structure of the network
     vtg::log$info("Getting the arc strength from each node")
-    responses <- client$call("bayesiannode", config[["arc_strength_args"]])
+    responses <- client$call("bayesiannode", config)
 
     vtg::log$info("Got {length(responses)} responses")
     if (length(responses) == 0) {
@@ -89,7 +88,8 @@ bayesian <- function(client, pred_col, config=list()) {
     responses <- client$call(
         "bayesiantrain",
         bnlearn::nodes(FinalStructure),
-        as.data.frame(bnlearn::arcs(FinalStructure))
+        as.data.frame(bnlearn::arcs(FinalStructure)),
+        config
     )
 
     # Weighted average to determine the parameters for the conditional probability tables
@@ -104,13 +104,15 @@ bayesian <- function(client, pred_col, config=list()) {
         model[[node]] <- list(responses[[1]]$model[[node]], prob=Reduce('+', weighted_prob))
     }
 
-    results <- c(results, model)
+    # Validate the training set
+    responses <- client$call("bayesianvalidate", model, pred_col, config)
+    results <- c(results, model, training_results=responses)
 
-    # Validation
+    # Validate the testing set
     if (validate_results) {
         vtg::log$info("Validating the network")
         client$collaboration$organizations <- validation_orgs
-        responses <- client$call("bayesianvalidate", model, pred_col)
+        responses <- client$call("bayesianvalidate", model, pred_col, config)
 
         results <- c(results, test_results=responses, val_org=config[["val_org_id"]])
     }

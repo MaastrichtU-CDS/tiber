@@ -36,6 +36,8 @@ config <- list(
   )
   #weighted_strength = 0.3
   #val_org_id = list()
+  #exclude = c('id')
+  #predictions = FALSE
 )
 
 # Run the bayesian network algorithm
