@@ -83,8 +83,6 @@ bayesian <- function(client, pred_col, config=list()) {
     FinalStructure <- bnlearn::empty.graph(unique(c(allArcs$to, allArcs$from)))
     bnlearn::arcs(FinalStructure) <- FinalArc
 
-    results <- list(structure=FinalStructure$arcs)
-
     # Training the network
     vtg::log$info("Training the network")
     responses <- client$call(
@@ -109,16 +107,17 @@ bayesian <- function(client, pred_col, config=list()) {
     }
 
     # Validate the training set
-    responses <- client$call("bayesianvalidate", model, pred_col, config)
-    results <- list(results, model=model, training_results=responses)
+    vtg::log$info("Validating the network - training")
+    responses <- client$call("bayesianvalidate", responses[[1]]$model, pred_col, config)
+    results <- list("structure"=FinalStructure$arcs, "model"=model, "training_results"=evaluation(responses))
 
     # Validate the testing set
     if (validate_results) {
-        vtg::log$info("Validating the network")
+        vtg::log$info("Validating the network - validation")
         client$collaboration$organizations <- validation_orgs
         responses <- client$call("bayesianvalidate", model, pred_col, config)
 
-        results <- list(results, test_results=responses, val_org=config[["val_org_id"]])
+        results <- c(results, "test_results"=evaluation(responses), "val_org"=config[["val_org_id"]])
     }
 
     return(results)

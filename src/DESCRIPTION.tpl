@@ -11,7 +11,10 @@ Depends:
 Imports:
     glue,
     vtg,
-    bnlearn
+    bnlearn,
+    ROCaggregator,
+    ROCR,
+    pracma
 Remotes:
     iknl/vtg
 RoxygenNote: 7.0.0
