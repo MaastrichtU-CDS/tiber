@@ -95,27 +95,29 @@ bayesian <- function(client, pred_col, config=list()) {
     # Weighted average to determine the parameters for the conditional probability tables
     vtg::log$info("Aggregate the conditional probability tables")
     total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
-    model <- list()
-    res <- list()
-    for (node in names(responses[[1]][["model"]])) {
+    prob_dist <- list()
+    model_structure <- responses[[1]][["model"]]
+    for (node in names(model_structure)) {
         weighted_prob <- lapply(
             1:length(responses),
-            function(i) responses[[i]]$model[[node]][["prob"]] * responses[[i]][["n_obs"]] / total_samples
+            function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["n_obs"]] / total_samples
         )
-        model[[node]] <- responses[[1]]$model[[node]]
-        model[[node]][["prob"]] <- Reduce('+', weighted_prob)
+        prob_dist[[node]] <- c(Reduce('+', weighted_prob))
+        dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
+        dimnames(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dimnames
     }
+    aggregated_model <- bnlearn::custom.fit(FinalStructure, dist=prob_dist)
 
     # Validate the training set
     vtg::log$info("Validating the network - training")
-    responses <- client$call("bayesianvalidate", responses[[1]]$model, pred_col, config)
-    results <- list("structure"=FinalStructure$arcs, "model"=model, "training_results"=evaluation(responses))
+    responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config)
+    results <- list("structure"=FinalStructure$arcs, "model"=aggregated_model, "training_results"=evaluation(responses))
 
     # Validate the testing set
     if (validate_results) {
         vtg::log$info("Validating the network - validation")
         client$collaboration$organizations <- validation_orgs
-        responses <- client$call("bayesianvalidate", model, pred_col, config)
+        responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config)
 
         results <- c(results, "test_results"=evaluation(responses), "val_org"=config[["val_org_id"]])
     }

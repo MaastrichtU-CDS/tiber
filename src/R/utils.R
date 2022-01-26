@@ -32,8 +32,8 @@ parse_roc <- function(partial_rocs) {
         precision_recall_aggregated$recall, precision_recall_aggregated$pre))
 
     return(list(
-        roc=list(roc_aggregated, auc=roc_auc, partial_auc=partial_auc),
-        pr=list(precision_recall_aggregated, auc=precision_recall_auc)
+        roc=list(roc=roc_aggregated, auc=roc_auc, partial_auc=partial_auc),
+        pr=list(pr=precision_recall_aggregated, auc=precision_recall_auc)
     ))
 }
 
