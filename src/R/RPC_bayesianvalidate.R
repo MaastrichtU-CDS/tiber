@@ -23,9 +23,12 @@ RPC_bayesianvalidate <- function(df, model, pred_col, config) {
         )
         result[["roc"]] <- roc
     }
-    if (!("predictions" %in% names(config)) || config[["predictions"]]) {
-        result <- c(result, "predictions"=list(preds), "outcomes"=list(df[, pred_col]))
-    }
+
+    # Confusion matrix
+    confusion_matrix <- caret::confusionMatrix(
+        preds, df[, pred_col], dnn = c("Prediction", "Reference")
+    )
+    result <- c(result, "cm"=list(confusion_matrix[["table"]]))
 
     vtg::log$info("Sending back the results")
     return(result)

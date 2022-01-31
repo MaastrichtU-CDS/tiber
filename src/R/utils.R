@@ -42,10 +42,6 @@ evaluation <- function(responses) {
     if ("roc" %in% names(responses[[1]])) {
         eval <- c(eval, "metrics"=parse_roc(sapply(responses, `[`, "roc")))
     }
-    if ("preds" %in% names(responses[[1]])) {
-        pred <- unname(unlist(sapply(partial_rocs, `[`, "preds")))
-        outcome <- unname(unlist(sapply(partial_rocs, `[`, "outcomes")))
-        eval <- c(eval, "predictions"=pred, "outcomes"=outcome)
-    }
+    eval <- c(eval, "cm"=list(Reduce('+', sapply(responses, `[`, "cm"))))
     return(eval)
 }

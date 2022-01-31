@@ -14,7 +14,8 @@ Imports:
     bnlearn,
     ROCaggregator,
     ROCR,
-    pracma
+    pracma,
+    caret
 Remotes:
     iknl/vtg
 RoxygenNote: 7.0.0
