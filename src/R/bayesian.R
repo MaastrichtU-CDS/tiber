@@ -94,13 +94,14 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Weighted average to determine the parameters for the conditional probability tables
     vtg::log$info("Aggregate the conditional probability tables")
-    total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
+    #total_samples <- Reduce('+', sapply(responses, "[", "n_obs"))
     prob_dist <- list()
     model_structure <- responses[[1]][["model"]]
     for (node in names(model_structure)) {
+        n_samples <- Reduce('+', sapply(sapply(responses, "[", "count"), "[", node))
         weighted_prob <- lapply(
             1:length(responses),
-            function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["n_obs"]] / total_samples
+            function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["count"]][[node]] / n_samples
         )
         prob_dist[[node]] <- c(Reduce('+', weighted_prob))
         dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
