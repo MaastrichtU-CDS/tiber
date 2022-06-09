@@ -1,5 +1,7 @@
 RPC_bayesiantrain <- function(df, nodes, arcs, config) {
     vtg::log$info("Starting bayesian train")
+    set_seed_config(config)
+
     df <- factor_dataframe(df, config)
 
     g <- bnlearn::empty.graph(nodes)

@@ -1,7 +1,8 @@
 bayesian <- function(client, pred_col, config=list()) {
     vtg::log$info("Running bayesian main algorithm")
     pkg.name <- getPackageName()
-
+    # sd <- names(Sys.getenv())
+    # vtg::log$info(paste(sd, collapse=" - "))
     image.name <- Sys.getenv("IMAGE_NAME")
 
     client$set.task.image(
@@ -18,23 +19,44 @@ bayesian <- function(client, pred_col, config=list()) {
     }
     vtg::log$info("Running `bayesian` locally")
 
+    # Initialize the seed in case it isn't provided
+    seed <- sample(1:10000, 1)
+    if ("seed" %in% names(config)) {
+        seed <- config[["seed"]]
+    } else {
+        vtg::log$info("Using a random seed '{seed}'")
+        config[["seed"]] <- seed
+    }
+    set.seed(seed)
+
+    # Initialize the data split percentage for training and validation
+    split <- 1
+    if ("data_split" %in% names(config)) {
+        if (config[["data_split"]] > 0 & config[["data_split"]] <= 1) {
+            split <- config[["data_split"]]
+        } else {
+            vtg::log$info("Invalid data split provided")
+        }
+    }
+
     # Define the nodes used for training and validation
     # By default, it will select a random node for validation
     collaboration_org_ids = client$collaboration$organizations
-    validate_results <- TRUE
-    if (!("val_org_id" %in% names(config))) {
+    external_validation <- TRUE
+    if (!("val_org_id" %in% names(config)) & length(collaboration_org_ids) > 1) {
         org_id <- collaboration_org_ids[[sample(1:length(collaboration_org_ids), 1)]]$id
-        vtg::log$info("Organization '{org_id}' selected for validation")
+        vtg::log$info("Organization '{org_id}' selected for external validation")
         config[["val_org_id"]] <- org_id
     } else if (length(config[["val_org_id"]]) == 0) {
-        vtg::log$info("Validation won't be performed")
-        validate_results <- FALSE
+        vtg::log$info("External validation won't be performed")
+        external_validation <- FALSE
     }
 
     # Update the client organizations according to the ones that will be used
     # for training
     validation_orgs <- list()
-    if (validate_results) {
+    if (external_validation) {
+        vtg::log$info("Setting up the client for training")
         client$collaboration$organizations <- list()
         for (collaboration in collaboration_org_ids) {
             if (collaboration$id %in% config[["val_org_id"]]) {
@@ -111,16 +133,27 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Validate the training set
     vtg::log$info("Validating the network - training")
-    responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config)
-    results <- list("structure"=FinalStructure$arcs, "model"=aggregated_model, "training_results"=evaluation(responses))
+    responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config, train_set=TRUE)
+    results <- list(
+        "structure"=FinalStructure$arcs,
+        "model"=aggregated_model,
+        "training_results"=evaluation(responses),
+        "config"=config
+    )
 
     # Validate the testing set
-    if (validate_results) {
+    if (split < 1) {
         vtg::log$info("Validating the network - validation")
-        client$collaboration$organizations <- validation_orgs
         responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config)
 
-        results <- c(results, "test_results"=evaluation(responses), "val_org"=config[["val_org_id"]])
+        results <- c(results, "val_results"=evaluation(responses))
+    }
+    if (external_validation) {
+        vtg::log$info("Validating the network - external validation")
+        client$collaboration$organizations <- validation_orgs
+        responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config, external_set=TRUE)
+
+        results <- c(results, "test_results"=evaluation(responses), "ext_val_org"=config[["val_org_id"]])
     }
 
     return(results)

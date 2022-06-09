@@ -33,14 +33,15 @@ config <- list(
     # algorithm = "hc",
     R = 300
     # algorithm.args = list(score = "bde", restart = 5, perturb = 5)
-  )
-  #weighted_strength = 0.3
-  #val_org_id = list()
-  #exclude = c('id')
-  #predictions = FALSE
+  ),
+  # weighted_strength = 0.3
+  val_org_id = c(),
+  # exclude = c('3')
+  # data_split = 0.6
+  # seed = 1234
 )
 
 # Run the bayesian network algorithm
 client$use.master.container <- TRUE
 client$data_format <- "RDS"
-result <- client$call('bayesian', 'PN', config)
+result <- client$call('bayesian', 'L', config)

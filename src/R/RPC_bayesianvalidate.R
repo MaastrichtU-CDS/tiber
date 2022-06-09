@@ -1,8 +1,11 @@
-RPC_bayesianvalidate <- function(df, model, pred_col, config) {
+RPC_bayesianvalidate <- function(df, model, pred_col, config, train_set=FALSE, external_set=FALSE) {
     vtg::log$info("Starting bayesian validate")
+    set_seed_config(config)
+
     requireNamespace("bnlearn", quietly=T)
 
-    df <- factor_dataframe(df, config)
+    df <- factor_dataframe(df, config, train_set, external_set)
+
     result <- list(n_obs=nrow(df))
 
     preds <- predict(model, node=pred_col, data=df, method="bayes-lw", prob=TRUE)

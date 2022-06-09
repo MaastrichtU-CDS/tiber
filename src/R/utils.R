@@ -1,5 +1,22 @@
-factor_dataframe <- function(df, config) {
+get_data_split <- function(config, size) {
+    split <- 1
+    if ("data_split" %in% names(config)) {
+        split <- config[["data_split"]]
+    }
+    dt = sort(sample(size, size * split))
+    return(dt)
+}
+
+factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE) {
     df <- data.frame(lapply(df , as.factor))
+    if (!external_set) {
+        dt <- get_data_split(config, nrow(df))
+        if (train) {
+            df <- df[dt,]
+        } else {
+            df <- df[-dt,]
+        }
+    }
     if ("exclude" %in% names(config)) {
         df <- df[,!(names(df) %in% config[["exclude"]])]
     }
@@ -44,4 +61,10 @@ evaluation <- function(responses) {
     }
     eval <- c(eval, "cm"=list(Reduce('+', sapply(responses, `[`, "cm"))))
     return(eval)
+}
+
+set_seed_config <- function(config) {
+    if ("seed" %in% names(config)) {
+        set.seed(config[["seed"]])
+    }
 }
