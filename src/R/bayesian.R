@@ -19,6 +19,14 @@ bayesian <- function(client, pred_col, config=list()) {
     }
     vtg::log$info("Running `bayesian` locally")
 
+    # Discretize variables
+    if ("discretize" %in% names(config)) {
+        discretize_info <- config[["discretize"]]
+        vtg::log$info(
+            "Discretizing the following variables: '{names(discretize_info)}'")
+        histograms <- client$call("histogram", discretize_info)
+    }
+
     # Initialize the seed in case it isn't provided
     seed <- sample(1:10000, 1)
     if ("seed" %in% names(config)) {
