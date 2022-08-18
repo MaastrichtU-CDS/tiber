@@ -9,9 +9,11 @@ RPC_histogram <- function(df, config) {
             histograms,
             variable=hist(
                 df[variable],
-                breaks=seq(from=0, to=max(df[variable]) + bin_width,
-                by=bin_width,
-                plot=FALSE
+                breaks=seq(from=(min(df[variable])%/%bin_width)*bin_width,
+                           to=(1 + max(df[variable])%/%bin_width)*bin_width,
+                           by=bin_width,
+                           plot=FALSE
+                )
             )
         )
     }
