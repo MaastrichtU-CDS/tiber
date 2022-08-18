@@ -33,11 +33,11 @@ Calling the main method (`bayesian`) will build the bayesian network using the d
 - R - the number of bootstrap replicates: 400
 - weighted_strength - threshold to select the network arcs based on the aggregated scoring: 0.2
 
-These configurations can be overrided using the `config` list and providing it when calling the vantage6 client.
+These configurations can be overridden using the `config` list and providing it when calling the vantage6 client.
 Additionally, it's also possible to configure other parameters:
 - val_org_id - explicitly provide the organization(s) id to use as validation. In case the argument isn't provided, 
 one random organization from the collaboration will be chosen. In case an empty vector is provided, no validation 
-will be perfomed and all organizations will be used for training.
+will be performed and all organizations will be used for training.
 - exclude - columns from the dataset to be ignore when creating and training the network
 
 ## Packaging the algorithm

@@ -68,41 +68,64 @@ bayesian <- function(client, pred_col, config=list()) {
         }
     }
 
-    # Get the structure of the network
-    vtg::log$info("Getting the arc strength from each node")
-    responses <- client$call("bayesiannode", config)
+    AllSitesInfo <- c()
+    if ("arc_structure" %in% names(config)) {
+        # Use the structure provided in the arguments
+        if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
+            vtg::log$info("Arc structure provided")
+            FinalArc <- as.data.frame(config[["arc_structure"]][["arcs"]])
+            nodes <- config[["arc_structure"]][["nodes"]]
+        } else {
+            return(c("Malformed argument: arc_structure"))
+        }
+    } else {
+        # Get the structure of the network
+        vtg::log$info("Getting the arc strength from each node")
+        responses <- client$call("bayesiannode", config)
 
-    vtg::log$info("Got {length(responses)} responses")
-    if (length(responses) == 0) {
-        return(c("No responses obtained from the node, please check the logs"))
+        vtg::log$info("Got {length(responses)} responses")
+        if (length(responses) == 0) {
+            return(c("No responses obtained from the node, please check the logs"))
+        }
+
+        for (i in 1:length(responses)) {
+            vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+        }
+
+        # Combine the structures
+        allArcs <- data.frame()
+        for (r in responses) {
+            allArcs <- rbind(allArcs, as.data.frame(r))
+        }
+        nodes <- unique(c(allArcs$to, allArcs$from))
+
+        AllSitesInfo <-
+            allArcs %>%
+            dplyr::group_by(from, to) %>%
+            dplyr::summarise(weighted_strength = weighted.mean(strength, sample),
+                             weighted_direction = weighted.mean(direction, sample), .groups = 'drop')
+
+        FinalArc <- as.data.frame(subset(
+            AllSitesInfo,
+            weighted_strength >= (
+                config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .),
+            select = c(from, to)
+        ))
     }
 
-    for (i in 1:length(responses)) {
-        vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+    # If requested, send the arcs and skip training and validation
+    if ("train" %in% names(config)) {
+        if (!(config[["train"]])) {
+            return(list("arcs"=FinalArc, "info"=AllSitesInfo, "nodes"=nodes))
+        }
     }
-
-    # Combine the structures
-    allArcs <- data.frame()
-    for (r in responses) {
-        allArcs <- rbind(allArcs, as.data.frame(r))
-    }
-
-    AllSitesInfo <-
-        allArcs %>%
-        dplyr::group_by(from, to) %>%
-        dplyr::summarise(weighted_strength = weighted.mean(strength, sample),
-                    weighted_direction = weighted.mean(direction, sample), .groups = 'drop')
-
-    FinalArc <- as.data.frame(subset(
-        AllSitesInfo,
-        weighted_strength >= (
-            config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .),
-        select = c(from, to)
-    ))
 
     vtg::log$info("Ended up with {nrow(FinalArc)} arcs")
+    if (nrow(FinalArc) == 0) {
+        return(c("No arcs found."))
+    }
 
-    FinalStructure <- bnlearn::empty.graph(unique(c(allArcs$to, allArcs$from)))
+    FinalStructure <- bnlearn::empty.graph(nodes)
     bnlearn::arcs(FinalStructure) <- FinalArc
 
     # Training the network
@@ -158,5 +181,3 @@ bayesian <- function(client, pred_col, config=list()) {
 
     return(results)
 }
-
-
