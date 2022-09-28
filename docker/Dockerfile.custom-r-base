@@ -3,10 +3,12 @@
 # network hubs.
 
 # Use R as the base image.
-FROM r-base:latest
+FROM r-base:4.2.1
 
 RUN apt-get update
-RUN apt-get install -y libssl-dev libcurl4-openssl-dev libxml2-dev
+RUN apt-get install -y libcurl4-openssl-dev build-essential libssh2-1-dev \
+  libxml2-dev libssl-dev libfontconfig1-dev libharfbuzz-dev \
+  libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev
 
 # Change directory to '/app’. This means the subsequent ‘RUN’ steps will
 # execute in this directory.
@@ -14,4 +16,3 @@ WORKDIR /app
 
 COPY docker/install_base_packages.R /app
 RUN Rscript install_base_packages.R
-

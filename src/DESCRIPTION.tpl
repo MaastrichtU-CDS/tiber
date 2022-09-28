@@ -17,5 +17,5 @@ Imports:
     pracma,
     caret
 Remotes:
-    iknl/vtg
+    iknl/vtg@b198199
 RoxygenNote: 7.0.0

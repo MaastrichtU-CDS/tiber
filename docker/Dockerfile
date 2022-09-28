@@ -11,9 +11,10 @@ ARG IMAGE_NAME='maintainer/algorithm'
 LABEL maintainer="Main Tainer <user@example.com>"
 
 # Install federated package
-COPY src /usr/local/R/${PKG_NAME}/
+COPY src/DESCRIPTION /usr/local/R/${PKG_NAME}/DESCRIPTION
 WORKDIR /usr/local/R/${PKG_NAME}
 RUN Rscript -e 'library(devtools)' -e 'install_deps(".")'
+COPY src /usr/local/R/${PKG_NAME}/
 RUN R CMD INSTALL --no-multiarch --with-keep.source .
 
 # Change directory to '/app’ and create files that will be
@@ -24,4 +25,3 @@ WORKDIR /app
 ENV PKG_NAME=${PKG_NAME}
 ENV IMAGE_NAME=${IMAGE_NAME}
 CMD Rscript -e "vtg::docker.wrapper('$PKG_NAME')"
-
