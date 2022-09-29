@@ -39,6 +39,63 @@ bayesian <- function(client, pred_col, config=list()) {
         }
     }
 
+    # Perform an initial validation
+    num_org = length(client$collaboration$organizations)
+    if (!("ignore_warnings" %in% names(config)) & num_org > 1) {
+        vtg::log$info("Perform initial validation")
+        responses <- client$call("validatedata", config)
+        vtg::log$info("Got {length(responses)} responses")
+        if (length(responses) == 0) {
+            return(c("No responses obtained from the node, please check the logs"))
+        }
+
+        # Evaluate the columns available at each site and
+        # the factors for each column
+        columns <- unique(c(sapply(responses, names)))
+        column_warning <- c()
+        column_factors_warning <- list()
+        for (column in columns) {
+            column_factors <- c(
+                responses[[1]][names(responses[[1]]) %in% c(column)]
+            )
+            for (response in responses) {
+                if (column %in% names(response)) {
+                    factors <- response[names(response) %in% c(column)]
+                    if (!all(factors %in% column_factors)) {
+                        column_factors <- c(column_factors, factors)
+                        column_factors_warning[column] <- unique(column_factors)
+                    }
+                } else {
+                    column_warning <- c(column_warning, column)
+                }
+            }
+        }
+        # Check the warnings
+        response <- list()
+        if (length(column_warning) > 0) {
+            response <- c(
+                response,
+                "column_warning"= list(
+                    warning="Different columns found in the nodes.",
+                    columns=unique(column_warning)
+                )
+            )
+        }
+        if (length(column_factors_warning) > 0) {
+            response <- c(
+                response,
+                "factor_warning"=c(
+                    warning="Different factors for the columns.",
+                    columns=column_factors_warning
+                )
+            )
+        }
+        if (length(response) > 0) {
+            vtg::log$error("Warnings while validating the data.")
+            return(response)
+        }
+    }
+
     # Define the nodes used for training and validation
     # By default, it will select a random node for validation
     collaboration_org_ids = client$collaboration$organizations
@@ -99,6 +156,19 @@ bayesian <- function(client, pred_col, config=list()) {
         }
         nodes <- unique(c(allArcs$to, allArcs$from))
 
+        # Reinforce the arc strength if requested
+        if ("reinforce" %in% names(config)) {
+            reinforce_factor <- 0.5
+            if ("reinforce_factor" %in% names(config)) {
+                reinforce_factor <- config[["reinforce_factor"]]
+            }
+            reinforce_list <- config[["reinforce"]]
+            arc_filter <-paste(allArcs$from, allArcs$to) %in%
+                paste(reinforce_list[, "from"], reinforce_list[, "to"])
+            allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
+        }
+
+        # Group the information and filter based on the threshold
         AllSitesInfo <-
             allArcs %>%
             dplyr::group_by(from, to) %>%
