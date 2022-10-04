@@ -1,8 +1,8 @@
-RPC_bayesiantrain <- function(df, nodes, arcs, config) {
+RPC_bayesiantrain <- function(df, nodes, arcs, factors_by_column, config) {
     vtg::log$info("Starting bayesian train")
     set_seed_config(config)
 
-    df <- factor_dataframe(df, config)
+    df <- factor_dataframe(df, config, factors_by_column=factors_by_column)
 
     g <- bnlearn::empty.graph(nodes)
     bnlearn::arcs(g) <- arcs

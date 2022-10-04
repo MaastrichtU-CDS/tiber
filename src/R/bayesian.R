@@ -40,8 +40,9 @@ bayesian <- function(client, pred_col, config=list()) {
     }
 
     # Perform an initial validation
+    factors_by_column <- list()
     num_org = length(client$collaboration$organizations)
-    if (!("ignore_warnings" %in% names(config)) & num_org > 1) {
+    if (num_org > 1) {
         vtg::log$info("Perform initial validation")
         responses <- client$call("validatedata", config)
         vtg::log$info("Got {length(responses)} responses")
@@ -53,46 +54,49 @@ bayesian <- function(client, pred_col, config=list()) {
         # the factors for each column
         columns <- unique(c(sapply(responses, names)))
         column_warning <- c()
-        column_factors_warning <- list()
+        column_factors_warning <- c()
         for (column in columns) {
             column_factors <- c(
-                responses[[1]][names(responses[[1]]) %in% c(column)]
+                responses[[1]][names(responses[[1]]) %in% c(column)][[column]]
             )
             for (response in responses) {
                 if (column %in% names(response)) {
-                    factors <- response[names(response) %in% c(column)]
-                    if (!all(factors %in% column_factors)) {
-                        column_factors <- c(column_factors, factors)
-                        column_factors_warning[column] <- unique(column_factors)
+                    factors <- response[names(response) %in% c(column)][[column]]
+                    if (!all(factors %in% column_factors) && length(factors) != length(column_factors)) {
+                        column_factors_warning <- c(column_factors_warning, column)
+                        column_factors <- unique(c(column_factors, factors))
                     }
                 } else {
                     column_warning <- c(column_warning, column)
                 }
             }
+            factors_by_column[[column]] <- column_factors
         }
         # Check the warnings
-        response <- list()
-        if (length(column_warning) > 0) {
-            response <- c(
-                response,
-                "column_warning"= list(
-                    warning="Different columns found in the nodes.",
-                    columns=unique(column_warning)
+        if (!("ignore_warnings" %in% names(config))) {
+            response <- list()
+            if (length(column_warning) > 0) {
+                response <- c(
+                    response,
+                    "column_warning"= list(
+                        warning="Different columns found in the nodes.",
+                        columns=unique(column_warning)
+                    )
                 )
-            )
-        }
-        if (length(column_factors_warning) > 0) {
-            response <- c(
-                response,
-                "factor_warning"=c(
-                    warning="Different factors for the columns.",
-                    columns=column_factors_warning
+            }
+            if (length(column_factors_warning) > 0) {
+                response <- c(
+                    response,
+                    "factor_warning"=c(
+                        warning="Different factors for the columns.",
+                        columns=factors_by_column[column_factors_warning]
+                    )
                 )
-            )
-        }
-        if (length(response) > 0) {
-            vtg::log$error("Warnings while validating the data.")
-            return(response)
+            }
+            if (length(response) > 0) {
+                vtg::log$error("Warnings while validating the data.")
+                return(response)
+            }
         }
     }
 
@@ -204,6 +208,7 @@ bayesian <- function(client, pred_col, config=list()) {
         "bayesiantrain",
         bnlearn::nodes(FinalStructure),
         as.data.frame(bnlearn::arcs(FinalStructure)),
+        factors_by_column,
         config
     )
 
@@ -226,7 +231,14 @@ bayesian <- function(client, pred_col, config=list()) {
 
     # Validate the training set
     vtg::log$info("Validating the network - training")
-    responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config, train_set=TRUE)
+    responses <- client$call(
+        "bayesianvalidate",
+        aggregated_model,
+        pred_col,
+        factors_by_column,
+        config,
+        train_set=TRUE
+    )
     results <- list(
         "structure"=FinalStructure$arcs,
         "model"=aggregated_model,
@@ -237,15 +249,27 @@ bayesian <- function(client, pred_col, config=list()) {
     # Validate the testing set
     if (split < 1) {
         vtg::log$info("Validating the network - validation")
-        responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config)
+        responses <- client$call(
+            "bayesianvalidate",
+            aggregated_model,
+            pred_col,
+            factors_by_column,
+            config
+        )
 
         results <- c(results, "val_results"=evaluation(responses))
     }
     if (external_validation) {
         vtg::log$info("Validating the network - external validation")
         client$collaboration$organizations <- validation_orgs
-        responses <- client$call("bayesianvalidate", aggregated_model, pred_col, config, external_set=TRUE)
-
+        responses <- client$call(
+            "bayesianvalidate",
+            aggregated_model,
+            pred_col,
+            factors_by_column,
+            config,
+            external_set=TRUE
+        )
         results <- c(results, "test_results"=evaluation(responses), "ext_val_org"=config[["val_org_id"]])
     }
 

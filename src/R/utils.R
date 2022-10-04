@@ -7,8 +7,13 @@ get_data_split <- function(config, size) {
     return(dt)
 }
 
-factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE) {
+factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors_by_column=list()) {
     df <- data.frame(lapply(df , as.factor))
+    if (length(factors_by_column) > 0) {
+        for (column in names(factors_by_column)) {
+            levels(df[[column]]) <- factor(factors_by_column[[column]])
+        }
+    }
     if (!external_set) {
         dt <- get_data_split(config, nrow(df))
         if (train) {
