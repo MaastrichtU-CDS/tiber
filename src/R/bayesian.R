@@ -62,7 +62,7 @@ bayesian <- function(client, pred_col, config=list()) {
             for (response in responses) {
                 if (column %in% names(response)) {
                     factors <- response[names(response) %in% c(column)][[column]]
-                    if (!all(factors %in% column_factors) && length(factors) != length(column_factors)) {
+                    if (!all(factors %in% column_factors) | length(factors) != length(column_factors)) {
                         column_factors_warning <- c(column_factors_warning, column)
                         column_factors <- unique(c(column_factors, factors))
                     }
