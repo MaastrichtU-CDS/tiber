@@ -142,6 +142,7 @@ bayesian <- function(client, pred_col, config=list()) {
     }
 
     AllSitesInfo <- c()
+    undirected_nodes <- data.frame()
     if ("arc_structure" %in% names(config)) {
         # Use the structure provided in the arguments
         if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
@@ -179,7 +180,7 @@ bayesian <- function(client, pred_col, config=list()) {
                 reinforce_factor <- config[["reinforce_factor"]]
             }
             reinforce_list <- config[["reinforce"]]
-            arc_filter <-paste(allArcs$from, allArcs$to) %in%
+            arc_filter <- paste(allArcs$from, allArcs$to) %in%
                 paste(reinforce_list[, "from"], reinforce_list[, "to"])
             allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
         }
@@ -191,8 +192,24 @@ bayesian <- function(client, pred_col, config=list()) {
             dplyr::summarise(weighted_strength = weighted.mean(strength, sample),
                              weighted_direction = weighted.mean(direction, sample), .groups = 'drop')
 
+        selected_nodes <- c()
+        for (i in 1:nrow(AllSitesInfo)) {
+            arc_info <- AllSitesInfo[i,]
+            reverse_arc_info <- AllSitesInfo[
+                AllSitesInfo$from %in% c(arc_info$to) & AllSitesInfo$to %in% c(arc_info$from),
+            ]
+            if (arc_info$weighted_direction != 0 & arc_info$weighted_direction > reverse_arc_info$weighted_direction) {
+                selected_nodes <- c(selected_nodes, TRUE)
+            } else {
+                selected_nodes <- c(selected_nodes, FALSE)
+                if (arc_info$weighted_direction != 0 & arc_info$weighted_direction == reverse_arc_info$weighted_direction) {
+                    undirected_nodes <- rbind(undirected_nodes, arc_info)
+                }
+            }
+        }
+
         FinalArc <- as.data.frame(subset(
-            AllSitesInfo,
+            AllSitesInfo[selected_nodes,],
             weighted_strength >= (
                 config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .),
             select = c(from, to)
@@ -202,7 +219,12 @@ bayesian <- function(client, pred_col, config=list()) {
     # If requested, send the arcs and skip training and validation
     if ("train" %in% names(config)) {
         if (!(config[["train"]])) {
-            return(list("arcs"=FinalArc, "info"=AllSitesInfo, "nodes"=nodes))
+            return(list(
+                "arcs"=FinalArc,
+                "info"=AllSitesInfo,
+                "nodes"=nodes,
+                "undirected_nodes"=undirected_nodes
+            ))
         }
     }
 

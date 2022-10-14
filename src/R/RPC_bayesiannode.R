@@ -19,9 +19,7 @@ RPC_bayesiannode <- function(df, config) {
         }
     }
 
-    bootstrapped <- do.call(bnlearn::boot.strength, parameters)
-
-    arcs <- bootstrapped[bootstrapped$from < bootstrapped$to,]
+    arcs <- do.call(bnlearn::boot.strength, parameters)
 
     arcs$sample <- nrow(df)
 
