@@ -52,23 +52,34 @@ bayesian <- function(client, pred_col, config=list()) {
 
         # Evaluate the columns available at each site and
         # the factors for each column
-        columns <- unique(c(sapply(responses, names)))
+        columns <- unique(unlist(sapply(responses, names)))
         column_warning <- c()
         column_factors_warning <- c()
+        column_factors_by_node <- list()
+        column_warning_by_node <- list()
         for (column in columns) {
             column_factors <- c(
                 responses[[1]][names(responses[[1]]) %in% c(column)][[column]]
             )
+            column_factors_by_node[[column]] <- list()
+            i <- 1
             for (response in responses) {
                 if (column %in% names(response)) {
                     factors <- response[names(response) %in% c(column)][[column]]
+                    column_factors_by_node[[column]][[i]] <- factors
                     if (!all(factors %in% column_factors) | length(factors) != length(column_factors)) {
                         column_factors_warning <- c(column_factors_warning, column)
                         column_factors <- unique(c(column_factors, factors))
                     }
                 } else {
                     column_warning <- c(column_warning, column)
+                    if (length(column_warning_by_node) < i) {
+                        column_warning_by_node[[i]] <- c(column)
+                    } else {
+                        column_warning_by_node[[i]] <- c(column_warning_by_node[[i]], column)
+                    }
                 }
+                i <- i + 1
             }
             factors_by_column[[column]] <- column_factors
         }
@@ -80,7 +91,8 @@ bayesian <- function(client, pred_col, config=list()) {
                     response,
                     "column_warning"= list(
                         warning="Different columns found in the nodes.",
-                        columns=unique(column_warning)
+                        columns=unique(column_warning),
+                        columns_by_node=column_warning_by_node
                     )
                 )
             }
@@ -89,7 +101,7 @@ bayesian <- function(client, pred_col, config=list()) {
                     response,
                     "factor_warning"=c(
                         warning="Different factors for the columns.",
-                        columns=factors_by_column[column_factors_warning]
+                        factors_by_node=column_factors_by_node[column_factors_warning]
                     )
                 )
             }

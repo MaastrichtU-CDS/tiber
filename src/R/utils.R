@@ -11,7 +11,9 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
     df <- data.frame(lapply(df , as.factor))
     if (length(factors_by_column) > 0) {
         for (column in names(factors_by_column)) {
-            levels(df[[column]]) <- factor(factors_by_column[[column]])
+            if (column %in% names(df)) {
+                levels(df[[column]]) <- factor(factors_by_column[[column]])
+            }
         }
     }
     if (!external_set) {
@@ -60,7 +62,7 @@ parse_roc <- function(partial_rocs) {
 }
 
 evaluation <- function(responses) {
-    eval <- list()
+    eval <- list("num_samples" = sapply(responses, `[`, "n_obs"))
     if ("roc" %in% names(responses[[1]])) {
         eval <- c(eval, "metrics"=parse_roc(sapply(responses, `[`, "roc")))
     }
