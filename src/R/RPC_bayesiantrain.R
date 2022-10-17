@@ -2,6 +2,8 @@ RPC_bayesiantrain <- function(df, nodes, arcs, factors_by_column, config) {
     vtg::log$info("Starting bayesian train")
     set_seed_config(config)
 
+    requireNamespace("mice", quietly=T)
+
     df <- factor_dataframe(df, config, factors_by_column=factors_by_column)
 
     g <- bnlearn::empty.graph(nodes)

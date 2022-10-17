@@ -8,6 +8,10 @@ get_data_split <- function(config, size) {
 }
 
 factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors_by_column=list()) {
+    pred_col <- config[["pred_col"]]
+    if ("exclude" %in% names(config)) {
+        df <- df[,!(names(df) %in% config[["exclude"]])]
+    }
     df <- data.frame(lapply(df , as.factor))
     if (length(factors_by_column) > 0) {
         for (column in names(factors_by_column)) {
@@ -17,15 +21,25 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
         }
     }
     if (!external_set) {
-        dt <- get_data_split(config, nrow(df))
+        df_pred <- df[!is.na(df[pred_col]),]
+        split_pred <- get_data_split(config, nrow(df_pred))
         if (train) {
-            df <- df[dt,]
+            df <- rbind(df_pred[split_pred,], df[is.na(df[pred_col]),])
         } else {
-            df <- df[-dt,]
+            df <- df_pred[-split_pred,]
         }
+    } else {
+        # Only the rows with the outcome available
+        df <- df[!is.na(df[pred_col]),]
     }
-    if ("exclude" %in% names(config)) {
-        df <- df[,!(names(df) %in% config[["exclude"]])]
+    if ("impute" %in% names(config) && config[["impute"]]) {
+        m <- 5
+        if ("impute_m" %in% config) {
+            m <- config[["impute_m"]]
+        }
+        df <- mice::complete(mice::mice(df, m=m), "stacked")
+    } else {
+        df <- na.omit(df)
     }
     return(df)
 }

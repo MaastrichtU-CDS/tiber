@@ -3,6 +3,7 @@ RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config,
     set_seed_config(config)
 
     requireNamespace("bnlearn", quietly=T)
+    requireNamespace("mice", quietly=T)
 
     df <- factor_dataframe(df, config, train_set, external_set, factors_by_column)
 

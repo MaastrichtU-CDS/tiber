@@ -15,7 +15,8 @@ Imports:
     ROCaggregator,
     ROCR,
     pracma,
-    caret
+    caret,
+    mice
 Remotes:
     iknl/vtg@b198199
 RoxygenNote: 7.0.0

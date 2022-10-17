@@ -2,6 +2,8 @@ RPC_bayesiannode <- function(df, config) {
     vtg::log$info("Got {nrow(df)} rows in this node's data")
     set_seed_config(config)
 
+    requireNamespace("mice", quietly=T)
+
     df <- factor_dataframe(df, config)
 
     parameters <- list(

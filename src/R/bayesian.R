@@ -4,6 +4,7 @@ bayesian <- function(client, pred_col, config=list()) {
     # sd <- names(Sys.getenv())
     # vtg::log$info(paste(sd, collapse=" - "))
     image.name <- Sys.getenv("IMAGE_NAME")
+    config[["pred_col"]] <- pred_col
 
     client$set.task.image(
         image.name,
@@ -58,6 +59,7 @@ bayesian <- function(client, pred_col, config=list()) {
         column_factors_by_node <- list()
         column_warning_by_node <- list()
         for (column in columns) {
+            # TODO: responses 1 may not include the column
             column_factors <- c(
                 responses[[1]][names(responses[[1]]) %in% c(column)][[column]]
             )
@@ -142,7 +144,7 @@ bayesian <- function(client, pred_col, config=list()) {
     }
 
     AllSitesInfo <- c()
-    undirected_nodes <- data.frame()
+    undirected_arcs <- data.frame()
     if ("arc_structure" %in% names(config)) {
         # Use the structure provided in the arguments
         if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
@@ -203,7 +205,7 @@ bayesian <- function(client, pred_col, config=list()) {
             } else {
                 selected_nodes <- c(selected_nodes, FALSE)
                 if (arc_info$weighted_direction != 0 & arc_info$weighted_direction == reverse_arc_info$weighted_direction) {
-                    undirected_nodes <- rbind(undirected_nodes, arc_info)
+                    undirected_arcs <- rbind(undirected_arcs, arc_info)
                 }
             }
         }
@@ -217,15 +219,13 @@ bayesian <- function(client, pred_col, config=list()) {
     }
 
     # If requested, send the arcs and skip training and validation
-    if ("train" %in% names(config)) {
-        if (!(config[["train"]])) {
-            return(list(
-                "arcs"=FinalArc,
-                "info"=AllSitesInfo,
-                "nodes"=nodes,
-                "undirected_nodes"=undirected_nodes
-            ))
-        }
+    if ("train" %in% names(config) && !(config[["train"]])) {
+        return(list(
+            "arcs"=FinalArc,
+            "info"=AllSitesInfo,
+            "nodes"=nodes,
+            "undirected_arcs"=undirected_arcs
+        ))
     }
 
     vtg::log$info("Ended up with {nrow(FinalArc)} arcs")

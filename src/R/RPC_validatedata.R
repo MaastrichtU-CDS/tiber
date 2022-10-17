@@ -1,5 +1,6 @@
 RPC_validatedata <- function(df, config) {
   vtg::log$info("Starting the initial validation")
+  requireNamespace("mice", quietly=T)
 
   # Using the external_set flag to avoid splitting the data.
   df <- factor_dataframe(df, config, external_set=TRUE)
