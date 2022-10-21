@@ -89,3 +89,20 @@ set_seed_config <- function(config) {
         set.seed(config[["seed"]])
     }
 }
+
+check_responses <- function(responses) {
+    if (length(responses) == 0) {
+        return(c("No responses obtained from the node, please check the logs"))
+    }
+    error_message = list()
+    i <- 0
+    for (response in responses) {
+        if ("error_message" %in% names(response)) {
+            error_message[i] <- response
+            i <- i + 1
+        }
+    }
+    if (i > 0) {
+        return(error_message)
+    }
+}
