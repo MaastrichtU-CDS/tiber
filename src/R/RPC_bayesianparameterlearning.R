@@ -1,10 +1,7 @@
 RPC_bayesianparameterlearning <- function(df, nodes, arcs, factors_by_column, config) {
-    vtg::log$info("Starting bayesian train")
+    vtg::log$info("Starting bayesian parameter learning")
     result = tryCatch({
         set_seed_config(config)
-
-        requireNamespace("mice", quietly=T)
-
         df <- factor_dataframe(df, config, factors_by_column=factors_by_column)
 
         g <- bnlearn::empty.graph(nodes)
@@ -29,10 +26,11 @@ RPC_bayesianparameterlearning <- function(df, nodes, arcs, factors_by_column, co
         vtg::log$info("Sending back the results")
         return(list(n_obs=nrow(df), model=fitted, count=node_count))
     }, error = function(e) {
-        vtg::log$info("Error while running bayesian train")
+        msg <- "Error while running bayesian parameter learning"
+        vtg::log$info(msg)
         vtg::log$info(e)
         return(list(
-            "error_message" = paste("Error running bayesian train:", e, sep=" ")
+            "error_message" = paste(msg, e, sep=" ")
         ))
     })
     return(result)

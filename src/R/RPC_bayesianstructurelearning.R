@@ -1,12 +1,9 @@
 RPC_bayesianstructurelearning <- function(df, config) {
-    vtg::log$info("Got {nrow(df)} rows in this node's data")
+    vtg::log$info("Starting bayesian structure learning")
     result = tryCatch({
         set_seed_config(config)
-
-        requireNamespace("mice", quietly=T)
-
         df <- factor_dataframe(df, config)
-
+        vtg::log$info("Got {nrow(df)} rows in this node's data")
         parameters <- list(
             df,
             algorithm = "hc",
@@ -30,10 +27,11 @@ RPC_bayesianstructurelearning <- function(df, config) {
 
         return(arcs)
     }, error = function(e) {
-        vtg::log$info("Error while running bayesian node")
+        msg <- "Error while running bayesian structure learning"
+        vtg::log$info(msg)
         vtg::log$info(e)
         return(list(
-            "error_message" = paste("Error running bayesian node:", e, sep=" ")
+            "error_message" = paste(msg, e, sep=" ")
         ))
     })
     return(result)

@@ -7,30 +7,40 @@ get_data_split <- function(config, size) {
     return(dt)
 }
 
-factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors_by_column=list()) {
+factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors_by_column=list(), validating=FALSE) {
     pred_col <- config[["pred_col"]]
+    # Exclude columns that won't be used
     if ("exclude" %in% names(config)) {
         df <- df[,!(names(df) %in% config[["exclude"]])]
     }
-    df <- data.frame(lapply(df , as.factor))
-    if (length(factors_by_column) > 0) {
-        for (column in names(factors_by_column)) {
-            if (column %in% names(df)) {
-                levels(df[[column]]) <- factor(factors_by_column[[column]])
-            }
-        }
-    }
+    # Split the data according to the options
     if (!external_set) {
+        # Perform the split for the rows that have an Outcome
+        # All columns without an outcome will be used for training
         df_pred <- df[!is.na(df[pred_col]),]
         split_pred <- get_data_split(config, nrow(df_pred))
         if (train) {
-            df <- rbind(df_pred[split_pred,], df[is.na(df[pred_col]),])
+            if ("impute" %in% names(config) && config[["impute"]]) {
+                df <- rbind(df_pred[split_pred,], df[is.na(df[pred_col]),])
+            } else {
+                df <- df_pred[split_pred,]
+            }
         } else {
             df <- df_pred[-split_pred,]
         }
     } else {
         # Only the rows with the outcome available
         df <- df[!is.na(df[pred_col]),]
+    }
+    df <- data.frame(lapply(df , as.factor))
+    # Imputation
+    if (validating) {
+        nan_limit <- 1
+        if ("nan_limit" %in% names(config)) {
+            nan_limit <- config[["nan_limit"]]
+        }
+        cnt_na <- apply(df, 1, function(z) sum(is.na(z)))
+        df <- df[cnt_na < nan_limit, ]
     }
     if ("impute" %in% names(config) && config[["impute"]]) {
         m <- 5
@@ -40,6 +50,14 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
         df <- mice::complete(mice::mice(df, m=m), "stacked")
     } else {
         df <- na.omit(df)
+    }
+    # Factors can only be included after imputation
+    if (length(factors_by_column) > 0) {
+        for (column in names(factors_by_column)) {
+            if (column %in% names(df)) {
+                levels(df[[column]]) <- factor(factors_by_column[[column]])
+            }
+        }
     }
     return(df)
 }
@@ -76,12 +94,17 @@ parse_roc <- function(partial_rocs) {
 }
 
 evaluation <- function(responses) {
-    eval <- list("num_samples" = sapply(responses, `[`, "n_obs"))
-    if ("roc" %in% names(responses[[1]])) {
-        eval <- c(eval, "metrics"=parse_roc(sapply(responses, `[`, "roc")))
+    eval_by_set = list()
+    for (evaluation_set in names(responses[[1]])) {
+        evaluation_metrics <- sapply(responses, `[`, evaluation_set)
+        eval <- list("num_samples" = sapply(evaluation_metrics, `[`, "n_obs"))
+        if ("roc" %in% names(evaluation_metrics[[1]])) {
+            eval <- c(eval, "metrics"=parse_roc(sapply(evaluation_metrics, `[`, "roc")))
+        }
+        eval <- c(eval, "cm"=list(Reduce('+', sapply(evaluation_metrics, `[`, "cm"))))
+        eval_by_set[[evaluation_set]] <- eval
     }
-    eval <- c(eval, "cm"=list(Reduce('+', sapply(responses, `[`, "cm"))))
-    return(eval)
+    return(eval_by_set)
 }
 
 set_seed_config <- function(config) {
@@ -95,14 +118,12 @@ check_responses <- function(responses) {
         return(c("No responses obtained from the node, please check the logs"))
     }
     error_message = list()
-    i <- 0
-    for (response in responses) {
-        if ("error_message" %in% names(response)) {
-            error_message[i] <- response
-            i <- i + 1
+    for (i in 1:length(responses)) {
+        if ("error_message" %in% names(responses[[i]])) {
+            error_message <- c(error_message, responses[[i]][["error_message"]])
         }
     }
-    if (i > 0) {
+    if (length(error_message) > 0) {
         return(error_message)
     }
 }
