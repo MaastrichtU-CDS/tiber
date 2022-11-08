@@ -9,6 +9,10 @@ get_data_split <- function(config, size) {
 
 factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors_by_column=list(), validating=FALSE) {
     pred_col <- config[["pred_col"]]
+    nan_limit <- 1
+    if ("nan_limit" %in% names(config)) {
+        nan_limit <- config[["nan_limit"]]
+    }
     # Exclude columns that won't be used
     if ("exclude" %in% names(config)) {
         df <- df[,!(names(df) %in% config[["exclude"]])]
@@ -35,16 +39,12 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
     df <- data.frame(lapply(df , as.factor))
     # Imputation
     if (validating) {
-        nan_limit <- 1
-        if ("nan_limit" %in% names(config)) {
-            nan_limit <- config[["nan_limit"]]
-        }
         cnt_na <- apply(df, 1, function(z) sum(is.na(z)))
         df <- df[cnt_na < nan_limit, ]
     }
-    if ("impute" %in% names(config) && config[["impute"]]) {
+    if (("impute" %in% names(config) && config[["impute"]]) || (validating && nan_limit > 1)) {
         m <- 5
-        if ("impute_m" %in% config) {
+        if ("impute_m" %in% names(config)) {
             m <- config[["impute_m"]]
         }
         df <- mice::complete(mice::mice(df, m=m), "stacked")

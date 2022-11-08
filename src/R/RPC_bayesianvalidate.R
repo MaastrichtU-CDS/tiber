@@ -61,6 +61,7 @@ RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config,
                 )
             }
             vtg::log$info("Original dataset")
+            config[["impute"]] <- FALSE
             # The validating flag will only keep the rows with less than 'nan_limit'
             # number of missing values (by default 1)
             performance_result[["train_set"]] <- validate_data(
