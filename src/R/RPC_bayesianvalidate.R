@@ -5,7 +5,7 @@ compute_metrics <- function (df, model, pred_col) {
     preds <- predict(model, node=pred_col, data=df, method="bayes-lw", prob=TRUE)
 
     # ROC evaluation in case of a binary predictor
-    if (length(levels(df[[pred_col]])) == 2) {
+    if (length(levels(df[[pred_col]])) == 2 && all(table(df[[pred_col]]) > 0)) {
         pred <- ROCR::prediction(c(attributes(preds)$prob[2,]), c(df[, pred_col]))
         perf <- ROCR::performance(pred, "tpr", "fpr")
         perf_p_r <- ROCR::performance(pred, "prec", "rec")
@@ -40,22 +40,23 @@ validate_data <- function(df, model, pred_col, factors_by_column, config, train_
 RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config, external_set=FALSE) {
     vtg::log$info("Starting bayesian validate")
     result = tryCatch({
-        set_seed_config(config)
         requireNamespace("bnlearn", quietly=T)
         performance_result <- list()
         if (external_set) {
             vtg::log$info("Testing set")
+            config[["impute"]] <- FALSE
             performance_result[["test_set"]] <- validate_data(
-                df, model, pred_col, factors_by_column, config, external_set=TRUE
+                df, model, pred_col, factors_by_column, config, external_set=TRUE, validating=TRUE
             )
-
         } else {
             # Training set
             if ("impute" %in% names(config) && config[["impute"]]) {
                 vtg::log$info("Imputed data")
+                set_seed_config(config)
                 performance_result[["train_set_imputed"]] <- validate_data(
                     df, model, pred_col, factors_by_column, config, train=TRUE
                 )
+                set_seed_config(config)
                 performance_result[["validation_set_imputed"]] <- validate_data(
                     df, model, pred_col, factors_by_column, config, train=FALSE
                 )
@@ -64,9 +65,11 @@ RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config,
             config[["impute"]] <- FALSE
             # The validating flag will only keep the rows with less than 'nan_limit'
             # number of missing values (by default 1)
+            set_seed_config(config)
             performance_result[["train_set"]] <- validate_data(
                 df, model, pred_col, factors_by_column, config, train=TRUE, validating=TRUE
             )
+            set_seed_config(config)
             performance_result[["validation_set"]] <- validate_data(
                 df, model, pred_col, factors_by_column, config, train=FALSE, validating=TRUE
             )
