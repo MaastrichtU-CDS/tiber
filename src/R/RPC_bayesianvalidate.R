@@ -54,11 +54,11 @@ RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config,
                 vtg::log$info("Imputed data")
                 set_seed_config(config)
                 performance_result[["train_set_imputed"]] <- validate_data(
-                    df, model, pred_col, factors_by_column, config, train=TRUE
+                    df, model, pred_col, factors_by_column, config, train_set=TRUE
                 )
                 set_seed_config(config)
                 performance_result[["validation_set_imputed"]] <- validate_data(
-                    df, model, pred_col, factors_by_column, config, train=FALSE
+                    df, model, pred_col, factors_by_column, config, train_set=FALSE
                 )
             }
             vtg::log$info("Original dataset")
@@ -67,11 +67,11 @@ RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config,
             # number of missing values (by default 1)
             set_seed_config(config)
             performance_result[["train_set"]] <- validate_data(
-                df, model, pred_col, factors_by_column, config, train=TRUE, validating=TRUE
+                df, model, pred_col, factors_by_column, config, train_set=TRUE, validating=TRUE
             )
             set_seed_config(config)
             performance_result[["validation_set"]] <- validate_data(
-                df, model, pred_col, factors_by_column, config, train=FALSE, validating=TRUE
+                df, model, pred_col, factors_by_column, config, train_set=FALSE, validating=TRUE
             )
         }
         return(performance_result)

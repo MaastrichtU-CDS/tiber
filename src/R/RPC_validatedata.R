@@ -3,7 +3,7 @@ RPC_validatedata <- function(df, config) {
   result = tryCatch({
     # Using the external_set flag to avoid splitting the data.
     config[["impute"]] <- FALSE
-    df <- df <- data.frame(lapply(df , as.factor))
+    df <- data.frame(lapply(df , as.factor))
 
     return(lapply(df, levels))
   }, error = function(e) {
