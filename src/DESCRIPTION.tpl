@@ -16,7 +16,8 @@ Imports:
     ROCR,
     pracma,
     caret,
-    mice
+    mice,
+    gRain
 Remotes:
     iknl/vtg@b198199
 RoxygenNote: 7.0.0
