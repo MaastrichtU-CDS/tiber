@@ -2,7 +2,8 @@ RPC_bayesianstructurelearning <- function(df, config) {
     vtg::log$info("Starting bayesian structure learning")
     result = tryCatch({
         set_seed_config(config)
-        df <- factor_dataframe(df, config)
+        out <- factor_dataframe(df, config)
+        df <- out$data
         vtg::log$info("Got {nrow(df)} rows in this node's data")
         parameters <- list(
             df,
@@ -18,14 +19,19 @@ RPC_bayesianstructurelearning <- function(df, config) {
                 }
             }
         }
-
-        arcs <- do.call(bnlearn::boot.strength, parameters)
-
-        arcs$sample <- nrow(df)
-
+        if ("structural_em" %in% config && config[["structural_em"]]) {
+            vtg::log$info("Structural EM algorithm")
+            arcs <- do.call(bnlearn::structural.em, parameters)
+            number_arcs <- nrow(arcs$arcs)
+        } else {
+            vtg::log$info("Boot strength algorithm")
+            arcs <- do.call(bnlearn::boot.strength, parameters)
+            arcs$sample <- nrow(df)
+            number_arcs <- nrow(arcs)
+        }
         vtg::log$info("Got {nrow(arcs)} arcs out of this")
 
-        return(arcs)
+        return(list("arcs"=arcs, "pre_summary"=out$summary, "summary"=summary_stats(df)))
     }, error = function(e) {
         msg <- "Error while running bayesian structure learning"
         vtg::log$info(msg)
