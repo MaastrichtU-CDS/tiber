@@ -3,7 +3,8 @@
 # network hubs.
 
 # Use R as the base image.
-FROM r-base:4.2.1
+# FROM r-base:4.2.1
+FROM r-base:4.3.3
 
 RUN apt-get update
 RUN apt-get install -y libcurl4-openssl-dev build-essential libssh2-1-dev \

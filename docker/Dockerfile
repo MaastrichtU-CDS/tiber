@@ -1,7 +1,8 @@
 # The Dockerfile tells Docker how to construct the image with your algorithm.
 # Once pushed to a repository, images can be downloaded and executed by the
 # network hubs.
-FROM custom-r-base
+# FROM custom-r-base
+FROM pmateus/r-base:4.4.1
 
 # This is a placeholder that should be overloaded by invoking
 # docker build with '--build-arg PKG_NAME=...'
@@ -9,6 +10,9 @@ ARG PKG_NAME='tiber'
 ARG IMAGE_NAME='maintainer/algorithm'
 
 LABEL maintainer="Main Tainer <user@example.com>"
+
+RUN apt update
+RUN apt -y install cmake
 
 # Install federated package
 COPY src/DESCRIPTION /usr/local/R/${PKG_NAME}/DESCRIPTION
