@@ -22,7 +22,7 @@ print( client$getCollaborations() )
 client$setCollaborationId(1)
 
 client$set.task.image(
-  'pmateus/tiber',
+  'pmateus/tiber:2.0.0',
   task.name="bayesian"
 )
 
