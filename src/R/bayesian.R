@@ -1,3 +1,172 @@
+bayesian_network <- function(client, config, training_orgs, validation_orgs, external_validation, factors_by_column, pred_col) {
+    # Set the organizations to train/validate
+    # TODO: move setting the training organizations + external validation out
+    client$collaboration$organizations <- training_orgs
+    AllSitesInfo <- c()
+    averaged_network <- list()
+    structures <- list()
+    if ("arc_structure" %in% names(config)) {
+        # Use the structure provided in the arguments
+        if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
+            vtg::log$info("Arc structure provided")
+            FinalArc <- as.data.frame(config[["arc_structure"]][["arcs"]])
+            nodes <- config[["arc_structure"]][["nodes"]]
+        } else {
+            return(c("Malformed argument: arc_structure"))
+        }
+    } else {
+        # Get the structure of the network
+        vtg::log$info("Getting the arc strength from each node")
+        responses <- client$call("bayesianstructurelearning", config)
+
+        vtg::log$info("Got {length(responses)} responses")
+        error_check = check_responses(responses)
+        if (!is.null(error_check)) {
+            return(error_check)
+        }
+
+        for (i in 1:length(responses)) {
+            vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+        }
+        # Summary statistics obtained
+        summary <- sapply(responses, `[`, "summary")
+        pre_summary <- sapply(responses, `[`, "pre_summary")
+        structures <- sapply(responses, `[`, "arcs")
+
+        # Combine the structures
+        allArcs <- data.frame()
+        for (r in responses) {
+            if ("std_strength" %in% names(config) && config[["std_strength"]]) {
+                r$arcs$strength <- (r$arcs$strength - mean(r$arcs$strength)) / sd(r$arcs$strength)
+            }
+            allArcs <- rbind(allArcs, as.data.frame(r$arcs))
+        }
+        nodes <- unique(c(allArcs$to, allArcs$from))
+
+        # Reinforce the arc strength if requested
+        if ("reinforce" %in% names(config)) {
+            reinforce_factor <- 0.5
+            if ("reinforce_factor" %in% names(config)) {
+                reinforce_factor <- config[["reinforce_factor"]]
+            }
+            reinforce_list <- config[["reinforce"]]
+            arc_filter <- paste(allArcs$from, allArcs$to) %in%
+                paste(reinforce_list[, "from"], reinforce_list[, "to"])
+            allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
+        }
+
+        # Group the information and filter based on the threshold
+        AllSitesInfo <-
+            allArcs %>%
+            dplyr::group_by(from, to) %>%
+            dplyr::summarise(strength = weighted.mean(strength, sample),
+                             direction = weighted.mean(direction, sample), .groups = 'drop')
+        class(AllSitesInfo) <- c("bn.strength", "data.frame")
+        attributes(AllSitesInfo)[["method"]] <- "bootstrap"
+        attributes(AllSitesInfo)[["threshold"]] <- config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .
+        attributes(AllSitesInfo)[["nodes"]] <- nodes
+        # Get the
+        averaged_network <- bnlearn::pdag2dag(
+            bnlearn::averaged.network(AllSitesInfo),
+            ordering=config[["ordering"]] %>% if (is.null(.)) nodes else .
+        )
+        FinalArc <- averaged_network$arcs
+    }
+
+    # If requested, send the arcs and skip training and validation
+    if ("train" %in% names(config) && !(config[["train"]])) {
+        return(list(
+            "info"=AllSitesInfo,
+            "averaged_network"=averaged_network,
+            "summary"=summary,
+            "pre_summary"=pre_summary
+        ))
+    }
+
+    vtg::log$info("Ended up with {nrow(FinalArc)} arcs")
+    if (nrow(FinalArc) == 0) {
+        return(c("No arcs found."))
+    }
+
+    FinalStructure <- bnlearn::empty.graph(nodes)
+    bnlearn::arcs(FinalStructure) <- FinalArc
+
+    # Training the network
+    vtg::log$info("Training the network")
+    responses <- client$call(
+        "bayesianparameterlearning",
+        bnlearn::nodes(FinalStructure),
+        as.data.frame(bnlearn::arcs(FinalStructure)),
+        factors_by_column,
+        config
+    )
+    error_check = check_responses(responses)
+    if (!is.null(error_check)) {
+        return(error_check)
+    }
+    return(responses)
+    # Weighted average to determine the parameters for the conditional probability tables
+    vtg::log$info("Aggregate the conditional probability tables")
+    prob_dist <- list()
+    model_structure <- responses[[1]][["model"]]
+    for (node in names(model_structure)) {
+        n_samples <- Reduce('+', sapply(sapply(responses, "[", "count"), "[", node))
+        weighted_prob <- lapply(
+            1:length(responses),
+            function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["count"]][[node]] / n_samples
+        )
+        prob_dist[[node]] <- c(Reduce('+', weighted_prob))
+        dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
+        dimnames(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dimnames
+    }
+    aggregated_model <- bnlearn::custom.fit(FinalStructure, dist=prob_dist)
+
+    # Result from the structure and parameter learning
+    results <- list(
+        "structure"=FinalStructure$arcs,
+        "model"=aggregated_model,
+        "info"=AllSitesInfo,
+        "averaged_network"=averaged_network,
+        "config"=config,
+        "cohort_networks"=structures,
+        "cohort_results"=responses
+    )
+
+    # Validate the training set
+    vtg::log$info("Validating the network")
+    responses <- client$call(
+        "bayesianvalidate",
+        aggregated_model,
+        pred_col,
+        factors_by_column,
+        config
+    )
+    error_check = check_responses(responses)
+    if (!is.null(error_check)) {
+        return(error_check)
+    }
+    results[["training_results"]] <- evaluation(responses)
+
+    if (external_validation) {
+        vtg::log$info("Validating the network - external validation")
+        client$collaboration$organizations <- validation_orgs
+        responses <- client$call(
+            "bayesianvalidate",
+            aggregated_model,
+            pred_col,
+            factors_by_column,
+            config,
+            external_set=TRUE
+        )
+        error_check = check_responses(responses)
+        if (!is.null(error_check)) {
+            return(list("result"=results, "error"=error_check))
+        }
+        results <- c(results, "test_results"=evaluation(responses), "ext_val_org"=config[["val_org_id"]])
+    }
+    return(results)
+}
+
 bayesian <- function(client, pred_col, config=list()) {
     vtg::log$info("Running bayesian main algorithm")
     bayesian_result = tryCatch({
@@ -7,9 +176,9 @@ bayesian <- function(client, pred_col, config=list()) {
         image.name <- Sys.getenv("IMAGE_NAME")
         # To run a specific docker image, you must specify it here due
         # to a problem with the R version of vtg
-        # image.name <- 'pmateus/tiber:1.0.0'
+        image.name <- 'pmateus/tiber:1.1.0'
         config[["pred_col"]] <- pred_col
-
+        print(config[["pred_col"]])
         client$set.task.image(
             image.name,
             task.name="bayesian"
@@ -134,6 +303,7 @@ bayesian <- function(client, pred_col, config=list()) {
 
         # Update the client organizations according to the ones that will be used
         # for training
+        training_orgs <- list()
         validation_orgs <- list()
         if (external_validation) {
             vtg::log$info("Setting up the client for training")
@@ -142,161 +312,32 @@ bayesian <- function(client, pred_col, config=list()) {
                 if (collaboration$id %in% config[["val_org_id"]]) {
                     validation_orgs <- append(validation_orgs, list(collaboration))
                 } else {
-                    client$collaboration$organizations <- append(
-                        client$collaboration$organizations, list(collaboration))
+                    training_orgs <- append(training_orgs, list(collaboration))
+                    #client$collaboration$organizations <- append(
+                    #    client$collaboration$organizations, list(collaboration))
                 }
-            }
-        }
-
-        AllSitesInfo <- c()
-        averaged_network <- list()
-        if ("arc_structure" %in% names(config)) {
-            # Use the structure provided in the arguments
-            if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
-                vtg::log$info("Arc structure provided")
-                FinalArc <- as.data.frame(config[["arc_structure"]][["arcs"]])
-                nodes <- config[["arc_structure"]][["nodes"]]
-            } else {
-                return(c("Malformed argument: arc_structure"))
             }
         } else {
-            # Get the structure of the network
-            vtg::log$info("Getting the arc strength from each node")
-            responses <- client$call("bayesianstructurelearning", config)
+            training_orgs <- collaboration_org_ids
+        }
 
-            vtg::log$info("Got {length(responses)} responses")
-            error_check = check_responses(responses)
-            if (!is.null(error_check)) {
-                return(error_check)
+        results <- list()
+        if ("k_fold" %in% names(config)) {
+            folds <- c(1:config[['k_fold']])
+            vtg::log$info("Running the k-fold for '{config[['k_fold']]}' folds")
+            if ("f_fold_l" %in% names(config)) {
+                folds <- config[["f_fold_l"]]
             }
-
-            for (i in 1:length(responses)) {
-                vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+            for (k in folds) {
+                vtg::log$info("Fold '{k}'")
+                config[["k"]] <- k
+                results[[k]] <- bayesian_network(
+                    client, config, training_orgs, validation_orgs, external_validation, factors_by_column, pred_col
+                )
             }
-
-            # Combine the structures
-            allArcs <- data.frame()
-            for (r in responses) {
-                allArcs <- rbind(allArcs, as.data.frame(r))
-            }
-            nodes <- unique(c(allArcs$to, allArcs$from))
-
-            # Reinforce the arc strength if requested
-            if ("reinforce" %in% names(config)) {
-                reinforce_factor <- 0.5
-                if ("reinforce_factor" %in% names(config)) {
-                    reinforce_factor <- config[["reinforce_factor"]]
-                }
-                reinforce_list <- config[["reinforce"]]
-                arc_filter <- paste(allArcs$from, allArcs$to) %in%
-                    paste(reinforce_list[, "from"], reinforce_list[, "to"])
-                allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
-            }
-
-            # Group the information and filter based on the threshold
-            AllSitesInfo <-
-                allArcs %>%
-                dplyr::group_by(from, to) %>%
-                dplyr::summarise(strength = weighted.mean(strength, sample),
-                                 direction = weighted.mean(direction, sample), .groups = 'drop')
-            class(AllSitesInfo) <- c("bn.strength", "data.frame")
-            attributes(AllSitesInfo)[["method"]] <- "bootstrap"
-            attributes(AllSitesInfo)[["threshold"]] <- config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .
-            attributes(AllSitesInfo)[["nodes"]] <- nodes
-            # Get the
-            averaged_network <- bnlearn::pdag2dag(
-                bnlearn::averaged.network(AllSitesInfo),
-                ordering=config[["ordering"]] %>% if (is.null(.)) nodes else .
-            )
-            FinalArc <- averaged_network$arcs
-        }
-
-        # If requested, send the arcs and skip training and validation
-        if ("train" %in% names(config) && !(config[["train"]])) {
-            return(list(
-                "info"=AllSitesInfo,
-                "averaged_network"=averaged_network
-            ))
-        }
-
-        vtg::log$info("Ended up with {nrow(FinalArc)} arcs")
-        if (nrow(FinalArc) == 0) {
-            return(c("No arcs found."))
-        }
-
-        FinalStructure <- bnlearn::empty.graph(nodes)
-        bnlearn::arcs(FinalStructure) <- FinalArc
-
-        # Training the network
-        vtg::log$info("Training the network")
-        responses <- client$call(
-            "bayesianparameterlearning",
-            bnlearn::nodes(FinalStructure),
-            as.data.frame(bnlearn::arcs(FinalStructure)),
-            factors_by_column,
-            config
-        )
-        error_check = check_responses(responses)
-        if (!is.null(error_check)) {
-            return(error_check)
-        }
-
-        # Weighted average to determine the parameters for the conditional probability tables
-        vtg::log$info("Aggregate the conditional probability tables")
-        prob_dist <- list()
-        model_structure <- responses[[1]][["model"]]
-        for (node in names(model_structure)) {
-            n_samples <- Reduce('+', sapply(sapply(responses, "[", "count"), "[", node))
-            weighted_prob <- lapply(
-                1:length(responses),
-                function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["count"]][[node]] / n_samples
-            )
-            prob_dist[[node]] <- c(Reduce('+', weighted_prob))
-            dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
-            dimnames(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dimnames
-        }
-        aggregated_model <- bnlearn::custom.fit(FinalStructure, dist=prob_dist)
-
-        # Result from the structure and parameter learning
-        results <- list(
-            "structure"=FinalStructure$arcs,
-            "model"=aggregated_model,
-            "info"=AllSitesInfo,
-            "averaged_network"=averaged_network,
-            "config"=config
-        )
-
-        # Validate the training set
-        vtg::log$info("Validating the network")
-        responses <- client$call(
-            "bayesianvalidate",
-            aggregated_model,
-            pred_col,
-            factors_by_column,
-            config
-        )
-        error_check = check_responses(responses)
-        if (!is.null(error_check)) {
-            return(error_check)
-        }
-        results[["training_results"]] <- evaluation(responses)
-
-        if (external_validation) {
-            vtg::log$info("Validating the network - external validation")
-            client$collaboration$organizations <- validation_orgs
-            responses <- client$call(
-                "bayesianvalidate",
-                aggregated_model,
-                pred_col,
-                factors_by_column,
-                config,
-                external_set=TRUE
-            )
-            error_check = check_responses(responses)
-            if (!is.null(error_check)) {
-                return(list("result"=results, "error"=error_check))
-            }
-            results <- c(results, "test_results"=evaluation(responses), "ext_val_org"=config[["val_org_id"]])
+        } else {
+            vtg::log$info("Running bayesian network with data split")
+            results <- bayesian_network(client, config, training_orgs, validation_orgs, external_validation, factors_by_column, pred_col)
         }
         return(results)
     }, error = function(e) {
