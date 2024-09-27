@@ -1,6 +1,6 @@
 # TIBER
 
-Repository for the TIBER project.
+Federated bayesian network algorithm for horizontally partitioned data.
 
 ## Usage
 
@@ -39,6 +39,8 @@ Additionally, it's also possible to configure other parameters:
 one random organization from the collaboration will be chosen. In case an empty vector is provided, no validation 
 will be performed and all organizations will be used for training.
 - exclude - columns from the dataset to be ignore when creating and training the network
+
+For a complete overview, check the examples 'run.R' or 'run-tiber.R'.
 
 ## Packaging the algorithm
 
