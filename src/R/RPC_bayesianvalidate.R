@@ -1,13 +1,16 @@
-compute_metrics <- function (df, model, pred_col) {
+compute_metrics <- function (df, model, pred_col, predict=FALSE) {
     # Compute the ROC AUC, PR AUC and confusion matrix
     result <- list(n_obs=nrow(df))
 
-    # preds <- predict(model, node=pred_col, data=df, method="bayes-lw", prob=TRUE)
     preds <- predict(model, node=pred_col, data=df, method="exact", prob=TRUE)
+    # preds <- predict(model, node=pred_col, data=df, method="bayes-lw", prob=TRUE)
+
+    result[["na_pred"]] <- sum(is.na(preds))
+    df <- df[!is.na(preds),]
 
     # ROC evaluation in case of a binary predictor
     if (length(levels(df[[pred_col]])) == 2 && all(table(df[[pred_col]]) > 0)) {
-        pred <- ROCR::prediction(c(attributes(preds)$prob[2,]), c(df[, pred_col]))
+        pred <- ROCR::prediction(c(na.omit(attributes(preds)$prob[2,])), c(df[, pred_col]))
         perf <- ROCR::performance(pred, "tpr", "fpr")
         perf_p_r <- ROCR::performance(pred, "prec", "rec")
         roc <- list(
@@ -19,12 +22,14 @@ compute_metrics <- function (df, model, pred_col) {
             total_count=nrow(df),
             auc=ROCR::performance(pred, measure = "auc")@y.values[[1]]
         )
+        print("Local AUC")
+        print(roc$auc)
         result[["roc"]] <- roc
     }
 
     # Confusion matrix
     confusion_matrix <- caret::confusionMatrix(
-        preds, df[, pred_col], dnn = c("Prediction", "Reference")
+        na.omit(preds), df[, pred_col], dnn = c("Prediction", "Reference")
     )
     result <- c(result, "cm"=list(confusion_matrix[["table"]]))
 
@@ -34,14 +39,32 @@ compute_metrics <- function (df, model, pred_col) {
 
 validate_data <- function(df, model, pred_col, factors_by_column, config, train_set=FALSE, validating=FALSE, external_set=FALSE, imputation_model=NULL) {
     bn_impute <- ("bn_impute" %in% names(config) && config[["bn_impute"]])
+    keep_nan <- ("keep_nan" %in% names(config) && config[["keep_nan"]])
     out <- factor_dataframe(df, config, train_set, external_set, factors_by_column, validating, bn_impute, imputation_model)
     df <- out$data
-    if (bn_impute) {
-        vtg::log$info("Impute using bnlearn")
-        df <- bnlearn::impute(model, data = df, method="exact")
+    performance_metrics <- list()
+    if (nrow(df) > 0) {
+        if (bn_impute && !keep_nan) {
+            vtg::log$info("Impute using bnlearn")
+            bn_imputation_model <- model
+            if ("imputation_model" %in% names(config)) {
+                vtg::log$info("Impute model provided")
+                bn_imputation_model <- config[["imputation_model"]]
+            }
+            debug <- FALSE
+            if ("debug" %in% names(config)) {
+                debug <- config[["debug"]]
+            }
+            df <- bnlearn::impute(bn_imputation_model, data = df, method="exact", debug = debug)
+            # df <- bnlearn::impute(bn_imputation_model, data = df, method="bayes-lw", debug = debug)
+
+            print(paste("Number of rows with missing data:", sum(is.na(df))))
+            print(paste("Number of rows with missing outcome:", sum(is.na(df[[pred_col]]))))
+        }
+        performance_metrics = compute_metrics(df, model, pred_col)
     }
     vtg::log$info("Got {nrow(df)} rows in this node's data")
-    return(list("metrics"=compute_metrics(df, model, pred_col), "imputation_model"=out$imputation_model))
+    return(list("metrics"=performance_metrics, "imputation_model"=out$imputation_model))
 }
 
 RPC_bayesianvalidate <- function(df, model, pred_col, factors_by_column, config, external_set=FALSE) {

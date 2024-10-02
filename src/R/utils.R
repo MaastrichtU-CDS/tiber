@@ -16,6 +16,14 @@ summary_stats <- function(df) {
     return(metrics)
 }
 
+factor_outcome <- function(pred_col) {
+    return (droplevels(factor(
+        pred_col,
+        levels=c("no", "0", 0, "yes", "1", 1),
+        labels=c(0, 0, 0, 1, 1, 1)
+    )))
+}
+
 get_indexes <- function(size, folds, k, sampler=c()) {
     interval = round(size/folds)
     start = if (k == 1) 1 else 1 + interval * (k - 1)
@@ -100,15 +108,80 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
     df$distance_discretised <- cut(as.numeric(df$distance), distance_tertiles_global, c("small", "medium", "large"), include.lowest = TRUE)
     df$distance_discretised_q <- cut(as.numeric(df$distance), distance_quartiles_global, c("micro", "small", "medium", "large"), include.lowest = TRUE)
 
+    # Set the outcome column
     pred_col <- config[["pred_col"]]
+
+    # Differences between the nodes' values
+    df[[pred_col]] <- factor_outcome(df[[pred_col]])
+
     # Convert to factors
     df <- data.frame(lapply(df , as.factor))
-    # Differences between the nodes' values
-    df[[pred_col]] <- droplevels(factor(
-        df[[pred_col]],
-        levels=c("no", "0", 0, "yes", "1", 1),
-        labels=c(0, 0, 0, 1, 1, 1)
-    ))
+
+    # WAS included?
+    include_was <- "include_was" %in% names(config) && config[["include_was"]]
+    if (include_was) {
+        df[["CR_or_WaS"]] <- factor_outcome(df[["CR_or_WaS"]])
+        df[["Complete_response"]] <- factor_outcome(df[["Complete_response"]])
+        outcome_or_was <- (df[["CR_or_WaS"]] == 1 & is.na(df[["Complete_response"]])) | !is.na(df[[pred_col]])
+        was <- df[["CR_or_WaS"]] == 1 & is.na(df[["Complete_response"]])
+        was <- ifelse(
+            is.na(was),
+            FALSE,
+            was
+        )
+        was_samples <- sum(was == TRUE, na.rm = TRUE)
+        if (was_samples > 0) {
+            print("Impute WAS")
+            print(was_samples)
+            if ("imputation_model" %in% names(config)) {
+                # TODO: model can't be applied without having the same factors/columns
+                df_pre <- df
+                df_pre[[pred_col]] <- factor_outcome(df_pre[[pred_col]])
+                df_pre <- df_pre[,!(names(df_pre) %in% config[["exclude"]])]
+                if (length(factors_by_column) > 0) {
+                    print("Including the factors")
+                    for (column in names(factors_by_column)) {
+                        if (column %in% names(df_pre) && column != pred_col) {
+                            df_pre[[column]] <- factor(df_pre[[column]], levels = factors_by_column[[column]])
+                        }
+                    }
+                }
+                print(nrow(df))
+                print(sum(!is.na(df[[pred_col]])))
+                print(sum(df[[pred_col]] == 1, na.rm = TRUE))
+                print("Imputing WAS")
+                imputed_df <- bnlearn::impute(
+                    config[["imputation_model"]],
+                    data = df_pre,
+                    method="exact",
+                    debug = TRUE,
+                    strict=FALSE
+                )
+                print(sum(df[[pred_col]] == 1, na.rm = TRUE))
+                print(imputed_df[was, ][[pred_col]])
+                # print("Prediction")
+                # preds <- predict(
+                #     config[["imputation_model"]],
+                #     node=pred_col,
+                #     data=imputed_df,
+                #     method="exact",
+                #     prob=TRUE
+                # )
+                # print(preds[was])
+                df[[pred_col]] <- ifelse(
+                    was,
+                    as.numeric(imputed_df[[pred_col]]) - 1,
+                    df[[pred_col]]
+                )
+                df[[pred_col]] <- factor_outcome(df[[pred_col]])
+            } else {
+                df <- df[outcome_or_was, ]
+            }
+            print("Including WAS, number of samples:")
+            print(sum(!is.na(outcome_or_was)))
+        }
+    }
+
     # Limit for the number of missing fields for each patient
     nan_limit <- 1
     if ("nan_limit" %in% names(config)) {
@@ -119,6 +192,7 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
         df <- df[,!(names(df) %in% config[["exclude"]])]
     }
     summary <- summary_stats(df)
+
     # Only include rows with a number of missing fields within the limit
     #if (validating) {
     cnt_na <- apply(df, 1, function(z) sum(is.na(z)))
@@ -133,8 +207,11 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
         # TODO: remove the magic numbers
         split_pred <- get_data_split(config, nrow(df_pred), which(df_pred[pred_col] == 1), which(df_pred[pred_col] == 0))
         print(split_pred)
+        # split_pred <- sample(split_pred, length(split_pred))
         if (train) {
-            if ("impute" %in% names(config) && config[["impute"]]) {
+            # TODO: modify variable name for impute_n (represents the % of rows without outcome to include)
+            if (("impute" %in% names(config) && config[["impute"]]) || ("impute_n" %in% names(config) && config[["impute_n"]])) {
+                print("Prepare dataset for imputation or merging with rows without outcome.")
                 df_no_pred <- df[is.na(df[pred_col]),]
                 fraction_without_pred <- 1
                 if ("impute_n" %in% names(config)) {
@@ -151,6 +228,11 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
     } else {
         # Only the rows with the outcome available
         df <- df[!is.na(df[pred_col]),]
+    }
+
+    # Variables to be excluded after the pre-processing
+    if ("exclude_pos" %in% names(config)) {
+        df <- df[,!(names(df) %in% config[["exclude_pos"]])]
     }
 
     if (nrow(df) > 0 && (("impute" %in% names(config) && config[["impute"]]) || (validating && nan_limit > 0 && !bn_impute))) {
@@ -190,6 +272,7 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
     }
     # Factors can only be included after imputation
     if (length(factors_by_column) > 0) {
+        print("Including the factors")
         for (column in names(factors_by_column)) {
             if (column %in% names(df) && column != pred_col) {
                 # Guaranteeing the same order to avoid switching the categories
@@ -200,7 +283,9 @@ factor_dataframe <- function(df, config, train=TRUE, external_set=FALSE, factors
             }
         }
     }
-    print("Number of rows with missing data: {sum(is.na(df))}")
+    print(paste("Number of rows:", nrow(df)))
+    print(paste("Number of rows with missing data:", sum(is.na(df))))
+    print(paste("Number of rows with missing outcome:", sum(is.na(df[[pred_col]]))))
     return(list("data"=df, "imputation_model"=imputation_model, "summary"=summary))
 }
 
@@ -244,6 +329,7 @@ evaluation <- function(responses) {
             eval <- c(eval, "metrics"=parse_roc(sapply(evaluation_metrics, `[`, "roc")))
         }
         eval <- c(eval, "cm"=list(Reduce('+', sapply(evaluation_metrics, `[`, "cm"))))
+        eval <- c(eval, list("na_pred" = sapply(evaluation_metrics, `[`, "na_pred")))
         eval_by_set[[evaluation_set]] <- eval
     }
     return(eval_by_set)

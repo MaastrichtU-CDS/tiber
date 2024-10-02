@@ -14,5 +14,5 @@ RPC_validatedata <- function(df, config) {
       "error_message" = paste(msg, e, sep=" ")
     ))
   })
-return(result)
+  return(result)
 }
