@@ -4,134 +4,164 @@ bayesian_network <- function(client, config, training_orgs, validation_orgs, ext
     client$collaboration$organizations <- training_orgs
     AllSitesInfo <- c()
     averaged_network <- list()
-    structures <- list()
-    if ("arc_structure" %in% names(config)) {
-        # Use the structure provided in the arguments
-        if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
-            vtg::log$info("Arc structure provided")
-            FinalArc <- as.data.frame(config[["arc_structure"]][["arcs"]])
-            nodes <- config[["arc_structure"]][["nodes"]]
-        } else {
-            return(c("Malformed argument: arc_structure"))
-        }
+    aggregated_model <- list()
+    if ("model" %in% names(config)) {
+        aggregated_model <- config[["model"]]
+        results <- list()
     } else {
-        # Get the structure of the network
-        vtg::log$info("Getting the arc strength from each node")
-        responses <- client$call("bayesianstructurelearning", config)
+        if ("arc_structure" %in% names(config)) {
+            # Use the structure provided in the arguments
+            if ("arcs" %in% names(config[["arc_structure"]]) & "nodes" %in% names(config[["arc_structure"]])) {
+                vtg::log$info("Arc structure provided")
+                FinalArc <- as.data.frame(config[["arc_structure"]][["arcs"]])
+                nodes <- config[["arc_structure"]][["nodes"]]
+            } else {
+                return(c("Malformed argument: arc_structure"))
+            }
+        } else {
+            # Get the structure of the network
+            vtg::log$info("Getting the arc strength from each node")
+            responses <- client$call(
+                "bayesianstructurelearning",
+                factors_by_column,
+                config
+            )
 
-        vtg::log$info("Got {length(responses)} responses")
+            vtg::log$info("Got {length(responses)} responses")
+            error_check = check_responses(responses)
+            if (!is.null(error_check)) {
+                return(error_check)
+            }
+            if ("structural_em" %in% names(config) && config[["structural_em"]]) {
+                return(list("response"=responses))
+            }
+            for (i in 1:length(responses)) {
+                vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+            }
+            # Summary statistics obtained
+            summary <- sapply(responses, `[`, "summary")
+            pre_summary <- sapply(responses, `[`, "pre_summary")
+
+            # Combine the structures
+            allArcs <- data.frame()
+            for (r in responses) {
+                if ("std_strength" %in% names(config) && config[["std_strength"]]) {
+                    r$arcs$strength <- (r$arcs$strength - mean(r$arcs$strength)) / sd(r$arcs$strength)
+                }
+                allArcs <- rbind(allArcs, as.data.frame(r$arcs))
+            }
+            nodes <- unique(c(allArcs$to, allArcs$from))
+
+            # Reinforce the arc strength if requested
+            if ("reinforce" %in% names(config)) {
+                reinforce_factor <- 0.5
+                if ("reinforce_factor" %in% names(config)) {
+                    reinforce_factor <- config[["reinforce_factor"]]
+                }
+                reinforce_list <- config[["reinforce"]]
+                arc_filter <- paste(allArcs$from, allArcs$to) %in%
+                    paste(reinforce_list[, "from"], reinforce_list[, "to"])
+                allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
+            }
+
+            # Group the information and filter based on the threshold
+            AllSitesInfo <-
+                allArcs %>%
+                dplyr::group_by(from, to) %>%
+                dplyr::summarise(strength = weighted.mean(strength, sample),
+                                 direction = weighted.mean(direction, sample), .groups = 'drop')
+            class(AllSitesInfo) <- c("bn.strength", "data.frame")
+            attributes(AllSitesInfo)[["method"]] <- "bootstrap"
+            attributes(AllSitesInfo)[["threshold"]] <- config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .
+            attributes(AllSitesInfo)[["nodes"]] <- nodes
+            # Get the
+            averaged_network <- bnlearn::pdag2dag(
+                bnlearn::averaged.network(AllSitesInfo),
+                ordering=config[["ordering"]] %>% if (is.null(.)) nodes else .
+            )
+            FinalArc <- averaged_network$arcs
+        }
+
+        # If requested, send the arcs and skip training and validation
+        if ("train" %in% names(config) && !(config[["train"]])) {
+            return(list(
+                "info"=AllSitesInfo,
+                "averaged_network"=averaged_network,
+                "summary"=summary,
+                "pre_summary"=pre_summary,
+                "config"=config
+            ))
+        }
+
+        vtg::log$info("Ended up with {nrow(FinalArc)} arcs")
+        if (nrow(FinalArc) == 0) {
+            return(c("No arcs found."))
+        }
+
+        FinalStructure <- bnlearn::empty.graph(nodes)
+        bnlearn::arcs(FinalStructure) <- FinalArc
+
+        # Training the network
+        vtg::log$info("Training the network")
+        responses <- client$call(
+            "bayesianparameterlearning",
+            bnlearn::nodes(FinalStructure),
+            as.data.frame(bnlearn::arcs(FinalStructure)),
+            factors_by_column,
+            config
+        )
+
         error_check = check_responses(responses)
         if (!is.null(error_check)) {
             return(error_check)
         }
 
-        for (i in 1:length(responses)) {
-            vtg::log$info("Returned DF {i} has {nrow(responses[[i]])} rows")
+        # Weighted average to determine the parameters for the conditional probability tables
+        vtg::log$info("Aggregate the conditional probability tables")
+        prob_dist <- list()
+        model_structure <- responses[[1]][["model"]]
+        for (node in names(model_structure)) {
+            n_samples <- Reduce('+', sapply(sapply(responses, "[", "count"), "[", node))
+            n_samples <- ifelse(
+                n_samples == 0,
+                length(responses),
+                n_samples
+            )
+            weighted_prob <- lapply(
+                1:length(responses),
+                function(i) replace(
+                    c(responses[[i]]$model[[node]][["prob"]]),
+                    is.na(responses[[i]]$model[[node]][["prob"]]),
+                    1 / dim(model_structure[[node]]$prob)[[1]]
+                ) * ifelse(
+                    n_samples == 0,
+                    1,
+                    responses[[i]][["count"]][[node]]
+                ) / n_samples
+            )
+            prob_dist[[node]] <- c(Reduce('+', weighted_prob))
+            dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
+            dimnames(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dimnames
         }
-        # Summary statistics obtained
-        summary <- sapply(responses, `[`, "summary")
-        pre_summary <- sapply(responses, `[`, "pre_summary")
-        structures <- sapply(responses, `[`, "arcs")
+        # return(list("str"=FinalStructure, "dist"=prob_dist, "prior"=responses))
+        aggregated_model <- bnlearn::custom.fit(FinalStructure, dist=prob_dist)
 
-        # Combine the structures
-        allArcs <- data.frame()
-        for (r in responses) {
-            if ("std_strength" %in% names(config) && config[["std_strength"]]) {
-                r$arcs$strength <- (r$arcs$strength - mean(r$arcs$strength)) / sd(r$arcs$strength)
-            }
-            allArcs <- rbind(allArcs, as.data.frame(r$arcs))
-        }
-        nodes <- unique(c(allArcs$to, allArcs$from))
-
-        # Reinforce the arc strength if requested
-        if ("reinforce" %in% names(config)) {
-            reinforce_factor <- 0.5
-            if ("reinforce_factor" %in% names(config)) {
-                reinforce_factor <- config[["reinforce_factor"]]
-            }
-            reinforce_list <- config[["reinforce"]]
-            arc_filter <- paste(allArcs$from, allArcs$to) %in%
-                paste(reinforce_list[, "from"], reinforce_list[, "to"])
-            allArcs[arc_filter, ]["strength"] <- allArcs[arc_filter, ]["strength"] + reinforce_factor
-        }
-
-        # Group the information and filter based on the threshold
-        AllSitesInfo <-
-            allArcs %>%
-            dplyr::group_by(from, to) %>%
-            dplyr::summarise(strength = weighted.mean(strength, sample),
-                             direction = weighted.mean(direction, sample), .groups = 'drop')
-        class(AllSitesInfo) <- c("bn.strength", "data.frame")
-        attributes(AllSitesInfo)[["method"]] <- "bootstrap"
-        attributes(AllSitesInfo)[["threshold"]] <- config[["weighted_strength"]] %>% if (is.null(.)) 0.2 else .
-        attributes(AllSitesInfo)[["nodes"]] <- nodes
-        # Get the
-        averaged_network <- bnlearn::pdag2dag(
-            bnlearn::averaged.network(AllSitesInfo),
-            ordering=config[["ordering"]] %>% if (is.null(.)) nodes else .
-        )
-        FinalArc <- averaged_network$arcs
-    }
-
-    # If requested, send the arcs and skip training and validation
-    if ("train" %in% names(config) && !(config[["train"]])) {
-        return(list(
+        # Result from the structure and parameter learning
+        results <- list(
+            "structure"=FinalStructure$arcs,
+            "model"=aggregated_model,
             "info"=AllSitesInfo,
             "averaged_network"=averaged_network,
-            "summary"=summary,
-            "pre_summary"=pre_summary
-        ))
-    }
-
-    vtg::log$info("Ended up with {nrow(FinalArc)} arcs")
-    if (nrow(FinalArc) == 0) {
-        return(c("No arcs found."))
-    }
-
-    FinalStructure <- bnlearn::empty.graph(nodes)
-    bnlearn::arcs(FinalStructure) <- FinalArc
-
-    # Training the network
-    vtg::log$info("Training the network")
-    responses <- client$call(
-        "bayesianparameterlearning",
-        bnlearn::nodes(FinalStructure),
-        as.data.frame(bnlearn::arcs(FinalStructure)),
-        factors_by_column,
-        config
-    )
-    error_check = check_responses(responses)
-    if (!is.null(error_check)) {
-        return(error_check)
-    }
-    return(responses)
-    # Weighted average to determine the parameters for the conditional probability tables
-    vtg::log$info("Aggregate the conditional probability tables")
-    prob_dist <- list()
-    model_structure <- responses[[1]][["model"]]
-    for (node in names(model_structure)) {
-        n_samples <- Reduce('+', sapply(sapply(responses, "[", "count"), "[", node))
-        weighted_prob <- lapply(
-            1:length(responses),
-            function(i) c(responses[[i]]$model[[node]][["prob"]]) * responses[[i]][["count"]][[node]] / n_samples
+            "config"=config,
+            "cohort_networks"=structures,
+            "cohort_results"=responses
         )
-        prob_dist[[node]] <- c(Reduce('+', weighted_prob))
-        dim(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dim
-        dimnames(prob_dist[[node]]) <- attributes(model_structure[[node]]$prob)$dimnames
+
+        # Skip evaluating the performance
+        if ("evaluate_perf" %in% names(config) && !config[["evaluate_perf"]]) {
+            return(results)
+        }
     }
-    aggregated_model <- bnlearn::custom.fit(FinalStructure, dist=prob_dist)
-
-    # Result from the structure and parameter learning
-    results <- list(
-        "structure"=FinalStructure$arcs,
-        "model"=aggregated_model,
-        "info"=AllSitesInfo,
-        "averaged_network"=averaged_network,
-        "config"=config,
-        "cohort_networks"=structures,
-        "cohort_results"=responses
-    )
-
     # Validate the training set
     vtg::log$info("Validating the network")
     responses <- client$call(
@@ -176,7 +206,7 @@ bayesian <- function(client, pred_col, config=list()) {
         image.name <- Sys.getenv("IMAGE_NAME")
         # To run a specific docker image, you must specify it here due
         # to a problem with the R version of vtg
-        image.name <- 'pmateus/tiber:1.1.0'
+        image.name <- 'pmateus/tiber2:0.5.12'
         config[["pred_col"]] <- pred_col
         print(config[["pred_col"]])
         client$set.task.image(
