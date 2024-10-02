@@ -176,7 +176,7 @@ bayesian <- function(client, pred_col, config=list()) {
         image.name <- Sys.getenv("IMAGE_NAME")
         # To run a specific docker image, you must specify it here due
         # to a problem with the R version of vtg
-        image.name <- 'pmateus/tiber:1.1.0'
+        image.name <- 'pmateus/tiber:2.0.0'
         config[["pred_col"]] <- pred_col
         print(config[["pred_col"]])
         client$set.task.image(
