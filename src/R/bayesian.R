@@ -104,7 +104,7 @@ bayesian_network <- function(client, config, training_orgs, validation_orgs, ext
     if (!is.null(error_check)) {
         return(error_check)
     }
-    return(responses)
+
     # Weighted average to determine the parameters for the conditional probability tables
     vtg::log$info("Aggregate the conditional probability tables")
     prob_dist <- list()
